@@ -1,0 +1,19 @@
+package com.actilazion.aries_transaction.dto.requests;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+public record RegisterRequest(
+        @NotBlank(message = "fullName is required")
+        @Size(max = 100, message = "fullName too long")
+        String fullName,
+
+        @NotBlank(message = "email is required")
+        @Email(message = "Invalid email format")
+        String email,
+
+        @NotBlank(message = "password is required")
+        @Size(min = 8, message = "password must be at least 8 characters")
+        String password
+) { }

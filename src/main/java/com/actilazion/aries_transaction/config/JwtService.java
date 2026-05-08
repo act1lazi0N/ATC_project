@@ -14,6 +14,8 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.function.Function;
 
+import static io.jsonwebtoken.Jwts.*;
+
 @Service
 @RequiredArgsConstructor
 public class JwtService {
@@ -34,7 +36,7 @@ public class JwtService {
 
     public String generateToken(HashMap<String, Object> claims, UserDetails userDetails) {
         long nowMs = System.currentTimeMillis();
-        return Jwts.builder()
+        return builder()
                 .setClaims(claims)
                 .setSubject(userDetails.getUsername())
                 .setIssuedAt(new Date(nowMs))
@@ -48,7 +50,7 @@ public class JwtService {
     }
 
     private <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
-        final Claims claims = Jwts.parserBuilder()
+        final Claims claims = Jwts.parser()
                 .setSigningKey(getSigningKey())
                 .build()
                 .parseClaimsJws(token)

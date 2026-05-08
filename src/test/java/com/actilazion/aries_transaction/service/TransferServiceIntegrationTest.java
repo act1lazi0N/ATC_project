@@ -1,0 +1,250 @@
+package com.actilazion.aries_transaction.service;
+
+import com.actilazion.aries_transaction.dto.requests.TransferRequest;
+import com.actilazion.aries_transaction.entity.Account;
+import com.actilazion.aries_transaction.entity.User;
+import com.actilazion.aries_transaction.entity.enums.AccountStatus;
+import com.actilazion.aries_transaction.entity.enums.AccountType;
+import com.actilazion.aries_transaction.entity.enums.Role;
+import com.actilazion.aries_transaction.entity.enums.TransactionStatus;
+import com.actilazion.aries_transaction.exception.AccountNotActiveException;
+import com.actilazion.aries_transaction.exception.DuplicateTransferException;
+import com.actilazion.aries_transaction.exception.InsufficientBalanceException;
+import com.actilazion.aries_transaction.exception.SelfTransferException;
+import com.actilazion.aries_transaction.repository.AccountRepository;
+import com.actilazion.aries_transaction.repository.AuditLogRepository;
+import com.actilazion.aries_transaction.repository.TransactionRepository;
+import com.actilazion.aries_transaction.repository.UserRepository;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
+import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
+
+import java.math.BigDecimal;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+@DataJpaTest
+@ActiveProfiles("test")
+@Import({TransferService.class, AuditLogService.class})
+public class TransferServiceIntegrationTest {
+    @Autowired
+    TestEntityManager em;
+    @Autowired TransferService      transferService;
+    @Autowired
+    AccountRepository accountRepository;
+    @Autowired
+    TransactionRepository transactionRepository;
+    @Autowired
+    AuditLogRepository auditLogRepository;
+    @Autowired
+    UserRepository userRepository;
+
+    private final IdempotencyService idempotencyService = mock(IdempotencyService.class);
+    private User sender;
+    private Account senderAccount;
+    private Account receiverAccount;
+
+    @BeforeEach
+    void setUp() {
+        when(idempotencyService.tryConsume(anyString())).thenReturn(true);
+
+        sender = userRepository.save(User.builder()
+                .fullName("Nguyen Van A")
+                .email("sender@test.com")
+                .passwordHash("hashed")
+                .role(Role.USER)
+                .build());
+
+        User receiver = userRepository.save(User.builder()
+                .fullName("Tran Thi B")
+                .email("receiver@test.com")
+                .passwordHash("hashed")
+                .role(Role.USER)
+                .build());
+
+        senderAccount = accountRepository.save(Account.builder()
+                .user(sender)
+                .accountNumber("ACC-001")
+                .accountType(AccountType.PERSONAL)
+                .balance(new BigDecimal("5000000"))
+                .currency("VND")
+                .status(AccountStatus.ACTIVE)
+                .build());
+
+        receiverAccount = accountRepository.save(Account.builder()
+                .user(receiver)
+                .accountNumber("ACC-002")
+                .accountType(AccountType.PERSONAL)
+                .balance(new BigDecimal("1000000"))
+                .currency("VND")
+                .status(AccountStatus.ACTIVE)
+                .build());
+
+        em.flush();
+        em.clear();
+    }
+
+    @Test
+    @DisplayName("Transfered successfullly: Correct balance debit/credit, status COMPLETED")
+    void transfer_success() {
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("1000000"),
+                UUID.randomUUID().toString(),
+                "VND",
+                "Trả tiền ăn"
+        );
+
+        var response = transferService.transfer(request, sender.getEmail());
+        //Check response
+        assertThat(response.status()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(response.amount()).isEqualByComparingTo("1000000");
+        assertThat(response.completedAt()).isNotNull();
+
+        //Check balance
+        em.clear();
+        Account updatedSender = accountRepository.findById(senderAccount.getId()).orElseThrow();
+        Account updatedReceiver = accountRepository.findById(receiverAccount.getId()).orElseThrow();
+
+        assertThat(updatedSender.getBalance()).isEqualByComparingTo("4000000");
+        assertThat(updatedReceiver.getBalance()).isEqualByComparingTo("2000000");
+    }
+
+    @Test
+    @DisplayName("Transferred Successfully: must have 2 audit log (INITIATED + COMPLETED)")
+    void transfer_success_auditLogsCreated() {
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("500000"),
+                UUID.randomUUID().toString(),
+                "VND",
+                null
+        );
+
+        var response = transferService.transfer(request, sender.getEmail());
+
+        var logs = auditLogRepository.findAllByTransactionId(response.id());
+        assertThat(logs).hasSize(2);
+        assertThat(logs.stream().map(l -> l.getEventType().name()))
+                .containsExactlyInAnyOrder("TRANSFER_INITIATED", "TRANSFER_COMPLETED");
+    }
+
+    @Test
+    @DisplayName("Insufficient balance: InsufficientBalanceException, balance unchange ")
+    void transfer_insufficientBalance_throwsException() {
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("9999999"),
+                UUID.randomUUID().toString(),
+                "VND",
+                null
+        );
+
+        assertThatThrownBy(() -> transferService.transfer(request, sender.getEmail()))
+                .isInstanceOf(InsufficientBalanceException.class);
+
+        em.clear();
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("5000000");
+    }
+
+    @Test
+    @DisplayName("Account has been frozen -> AccountNotActiveException")
+    void transfer_frozenAccount_throwsException() {
+        senderAccount.setStatus(AccountStatus.FROZEN);
+        accountRepository.save(senderAccount);
+        em.flush();
+        em.clear();
+
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("100000"),
+                UUID.randomUUID().toString(),
+                "VND",
+                null
+        );
+
+        assertThatThrownBy(() -> transferService.transfer(request, sender.getEmail()))
+                .isInstanceOf(AccountNotActiveException.class);
+    }
+
+    @Test
+    @DisplayName("Self transfer -> SelfTransferException")
+    void transfer_selfTransfer_throwsException() {
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                senderAccount.getId().toString(),
+                new BigDecimal("100000"),
+                UUID.randomUUID().toString(),
+                "VND",
+                null
+        );
+
+        assertThatThrownBy(() -> transferService.transfer(request, sender.getEmail()))
+                .isInstanceOf(SelfTransferException.class);
+    }
+
+    @Test
+    @DisplayName("Duplicated Idempotency key -> DuplicateTransferException")
+    void transfer_duplicateIdempotencyKey_throwsException() {
+        String sameKey = UUID.randomUUID().toString();
+        when(idempotencyService.tryConsume(sameKey))
+                .thenReturn(true)
+                .thenReturn(false);
+
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("100000"),
+                sameKey,
+                "VND",
+                null
+        );
+
+        // 1# Successful transfer
+        transferService.transfer(request, sender.getEmail());
+
+        // 2# Duplicate transfer
+        assertThatThrownBy(() -> transferService.transfer(request, sender.getEmail()))
+                .isInstanceOf(DuplicateTransferException.class);
+
+        // Only 1 transaction should be created
+        assertThat(transactionRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Exact balance success -> balance return to 0")
+    void transfer_exactBalance_success() {
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("5000000"),
+                UUID.randomUUID().toString(),
+                "VND",
+                null
+        );
+
+        var response = transferService.transfer(request, sender.getEmail());
+
+        assertThat(response.status()).isEqualTo(TransactionStatus.COMPLETED);
+
+        em.clear();
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("0");
+    }
+
+}

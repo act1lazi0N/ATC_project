@@ -12,7 +12,7 @@ public class InsufficientBalanceException extends AppException {
                         available.toPlainString(),
                         required.toPlainString()
                 ),
-                HttpStatus.UNPROCESSABLE_ENTITY
+                HttpStatus.UNPROCESSABLE_CONTENT
         );
     }
 }

@@ -32,3 +32,9 @@ jwt:
   secret: ${JWT_SECRET}
   expiration: 86400
 
+logging:
+  level:
+    com.transfer: DEBUG
+    org.springframework.security: INFO
+    org.hibernate.SQL: WARN
+

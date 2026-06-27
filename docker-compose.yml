@@ -1,27 +1,27 @@
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: aries_transaction_postgres
+    container_name: transfer_postgres
     restart: unless-stopped
-    environment:
-      POSTGRES_DB:       aries_transaction_db
-      POSTGRES_USER:     aries_transaction_user
-      POSTGRES_PASSWORD: aries_transaction_pass
     ports:
       - "5432:5432"
+    environment:
+      POSTGRES_DB: transfer_db
+      POSTGRES_USER: transfer_user
+      POSTGRES_PASSWORD: transfer_pass
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U aries_transaction_user -d aries_transaction_db"]
+      test: [ "CMD-SHELL", "pg_isready -U transfer_user -d transfer_db" ]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
     networks:
-      - aries_transaction_net
+      - transfer_net
   redis:
     image: redis:7-alpine
-    container_name: aries_transaction_redis
+    container_name: transfer_redis
     restart: unless-stopped
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
     ports:
@@ -29,29 +29,39 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - aries_transaction_net
+      - transfer_net
+
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: aries_transaction_app
+    container_name: transfer_app
     restart: unless-stopped
     ports:
       - "8080:8080"
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/aries_transaction_db
-      SPRING_DATASOURCE_USERNAME: aries_transaction_user
-      SPRING_DATASOURCE_PASSWORD: aries_transaction_pass
+      # DataSource
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/transfer_db
+      SPRING_DATASOURCE_USERNAME: transfer_user
+      SPRING_DATASOURCE_PASSWORD: transfer_pass
+
+      # Redis
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+
+      # Flyway
       SPRING_FLYWAY_ENABLED: "true"
-      SPRING_FLYWAY_LOCATIONS:  classpath:db/migration
+      SPRING_FLYWAY_LOCATIONS: classpath:db/migration
+
+      # JWT
       JWT_SECRET: ${JWT_SECRET:-dGhpcyBpcyBhIHZlcnkgbG9uZyBzZWNyZXQga2V5IGZvciBkZXY=}
+
+      # JPA — validate schema
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
 
       SPRING_PROFILES_ACTIVE: docker
@@ -61,13 +71,13 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      test: [ "CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1" ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
     networks:
-      - aries_transaction_net
+      - transfer_net
 
 volumes:
   postgres_data:
@@ -76,5 +86,6 @@ volumes:
     driver: local
 
 networks:
-  aries_transaction_net:
+  transfer_net:
     driver: bridge
+

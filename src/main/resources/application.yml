@@ -1,11 +1,12 @@
 spring:
   application:
     name: aries_transaction
-
+  config:
+    import: optional:file:.env[.properties]
   datasource:
-    url: jdbc:postgresql://localhost:5432/aries_transaction_db
-    username: postgres
-    password: postgres
+    url: jdbc:postgresql://localhost:5432/transfer_db
+    username: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10

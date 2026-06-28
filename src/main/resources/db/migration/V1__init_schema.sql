@@ -1,21 +1,4 @@
--- ============================================================
--- V1__init_schema.sql
--- Initial schema cho Transfer System
---
--- Quy tắc Flyway:
---   - File này KHÔNG BAO GIỜ được sửa sau khi đã chạy
---   - Mọi thay đổi schema về sau → tạo file V2__, V3__...
---   - checksum của file thay đổi → Flyway báo lỗi, app không start
--- ============================================================
-
--- ── EXTENSION ───────────────────────────────────────────────
--- pgcrypto cho gen_random_uuid() — cần thiết nếu PostgreSQL < 13
--- PostgreSQL 13+ có sẵn, nhưng CREATE EXTENSION IF NOT EXISTS vô hại
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
-
--- ── ENUM TYPES ───────────────────────────────────────────────
--- Dùng custom type thay vì VARCHAR để DB enforce giá trị hợp lệ
--- Nếu application gửi giá trị ngoài enum → DB báo lỗi ngay
 
 CREATE TYPE user_role AS ENUM ('USER', 'ADMIN');
 
@@ -32,10 +15,10 @@ CREATE TYPE audit_event_type AS ENUM (
     'TRANSFER_REVERSED',
     'ACCOUNT_FROZEN',
     'ACCOUNT_CLOSED'
-);
+    );
 
--- ── USERS ────────────────────────────────────────────────────
-CREATE TABLE users (
+CREATE TABLE users
+(
     id            UUID         NOT NULL DEFAULT gen_random_uuid(),
     full_name     VARCHAR(100) NOT NULL,
     email         VARCHAR(255) NOT NULL,
@@ -49,12 +32,8 @@ CREATE TABLE users (
     CONSTRAINT uk_users_email UNIQUE (email)
 );
 
-COMMENT ON TABLE  users            IS 'Người dùng hệ thống';
-COMMENT ON COLUMN users.role       IS 'USER = người dùng thường, ADMIN = quản trị viên';
-COMMENT ON COLUMN users.is_active  IS 'FALSE = tài khoản bị vô hiệu hóa, không thể đăng nhập';
-
--- ── ACCOUNTS ─────────────────────────────────────────────────
-CREATE TABLE accounts (
+CREATE TABLE accounts
+(
     id             UUID           NOT NULL DEFAULT gen_random_uuid(),
     user_id        UUID           NOT NULL,
     account_number VARCHAR(20)    NOT NULL,
@@ -65,97 +44,65 @@ CREATE TABLE accounts (
     created_at     TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
     updated_at     TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT pk_accounts          PRIMARY KEY (id),
-    CONSTRAINT uk_accounts_number   UNIQUE (account_number),
-    CONSTRAINT fk_accounts_user     FOREIGN KEY (user_id) REFERENCES users(id),
-
-    -- DB-level safety net: dù app có bug, DB không bao giờ cho balance âm
+    CONSTRAINT pk_accounts PRIMARY KEY (id),
+    CONSTRAINT uk_accounts_number UNIQUE (account_number),
+    CONSTRAINT fk_accounts_user FOREIGN KEY (user_id) REFERENCES users (id),
     CONSTRAINT chk_accounts_balance CHECK (balance >= 0)
 );
 
-COMMENT ON TABLE  accounts         IS 'Tài khoản ngân hàng nội bộ';
-COMMENT ON COLUMN accounts.balance IS 'NUMERIC(18,2) — không dùng FLOAT tránh lỗi làm tròn';
-COMMENT ON COLUMN accounts.currency IS 'ISO 4217: VND, USD, EUR...';
+CREATE TABLE transactions
+(
+    id              UUID               NOT NULL DEFAULT gen_random_uuid(),
+    from_account_id UUID               NOT NULL,
+    to_account_id   UUID               NOT NULL,
+    initiated_by    UUID               NOT NULL,
+    amount          NUMERIC(18, 2)     NOT NULL,
+    currency        CHAR(3)            NOT NULL DEFAULT 'VND',
+    status          transaction_status NOT NULL DEFAULT 'PENDING',
+    idempotency_key VARCHAR(64)        NOT NULL,
+    description     VARCHAR(255),
+    failure_reason  VARCHAR(500),
+    created_at      TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
+    completed_at    TIMESTAMPTZ,
 
--- ── TRANSACTIONS ─────────────────────────────────────────────
-CREATE TABLE transactions (
-    id               UUID               NOT NULL DEFAULT gen_random_uuid(),
-    from_account_id  UUID               NOT NULL,
-    to_account_id    UUID               NOT NULL,
-    initiated_by     UUID               NOT NULL,
-    amount           NUMERIC(18, 2)     NOT NULL,
-    currency         CHAR(3)            NOT NULL DEFAULT 'VND',
-    status           transaction_status NOT NULL DEFAULT 'PENDING',
-    idempotency_key  VARCHAR(64)        NOT NULL,
-    description      VARCHAR(255),
-    failure_reason   VARCHAR(500),
-    created_at       TIMESTAMPTZ        NOT NULL DEFAULT NOW(),
-    completed_at     TIMESTAMPTZ,
-
-    CONSTRAINT pk_transactions               PRIMARY KEY (id),
-    CONSTRAINT uk_transactions_idempotency   UNIQUE (idempotency_key),
-    CONSTRAINT fk_transactions_from_account  FOREIGN KEY (from_account_id) REFERENCES accounts(id),
-    CONSTRAINT fk_transactions_to_account    FOREIGN KEY (to_account_id)   REFERENCES accounts(id),
-    CONSTRAINT fk_transactions_initiated_by  FOREIGN KEY (initiated_by)    REFERENCES users(id),
-
-    -- Không cho phép chuyển tiền vào chính mình — enforce ở cả DB lẫn application
+    CONSTRAINT pk_transactions PRIMARY KEY (id),
+    CONSTRAINT uk_transactions_idempotency UNIQUE (idempotency_key),
+    CONSTRAINT fk_transactions_from_account FOREIGN KEY (from_account_id) REFERENCES accounts (id),
+    CONSTRAINT fk_transactions_to_account FOREIGN KEY (to_account_id) REFERENCES accounts (id),
+    CONSTRAINT fk_transactions_initiated_by FOREIGN KEY (initiated_by) REFERENCES users (id),
     CONSTRAINT chk_transactions_no_self_transfer CHECK (from_account_id <> to_account_id),
-
-    -- amount phải dương — không có giao dịch âm hay bằng 0
     CONSTRAINT chk_transactions_amount CHECK (amount > 0)
 );
 
-COMMENT ON TABLE  transactions                IS 'Lịch sử giao dịch chuyển tiền';
-COMMENT ON COLUMN transactions.idempotency_key IS 'UUID do client generate — ngăn chuyển tiền 2 lần khi retry';
-COMMENT ON COLUMN transactions.failure_reason  IS 'Chỉ có giá trị khi status = FAILED';
-
--- ── AUDIT LOGS ───────────────────────────────────────────────
-CREATE TABLE audit_logs (
-    id             UUID            NOT NULL DEFAULT gen_random_uuid(),
-    transaction_id UUID            NOT NULL,
+CREATE TABLE audit_logs
+(
+    id             UUID             NOT NULL DEFAULT gen_random_uuid(),
+    transaction_id UUID             NOT NULL,
     event_type     audit_event_type NOT NULL,
     actor_id       VARCHAR(100),
     payload        JSONB,
-    created_at     TIMESTAMPTZ     NOT NULL DEFAULT NOW(),
+    created_at     TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT pk_audit_logs         PRIMARY KEY (id),
-    CONSTRAINT fk_audit_logs_txn     FOREIGN KEY (transaction_id) REFERENCES transactions(id)
+    CONSTRAINT pk_audit_logs PRIMARY KEY (id),
+    CONSTRAINT fk_audit_logs_txn FOREIGN KEY (transaction_id) REFERENCES transactions (id)
 );
 
-COMMENT ON TABLE  audit_logs         IS 'Lịch sử thay đổi trạng thái giao dịch — append only, không update';
-COMMENT ON COLUMN audit_logs.payload IS 'Snapshot trạng thái tại thời điểm event — JSONB để query được';
-COMMENT ON COLUMN audit_logs.actor_id IS 'Email của user hoặc "system" nếu do scheduled job';
-
--- ── INDEXES ──────────────────────────────────────────────────
--- Chỉ tạo index cho những column thực sự được query — không index mọi thứ
--- Quá nhiều index → INSERT/UPDATE chậm vì phải update index
-
--- accounts: hay query theo user
 CREATE INDEX idx_accounts_user_id ON accounts (user_id);
 
--- transactions: query lịch sử theo account (cả 2 chiều)
 CREATE INDEX idx_transactions_from_account ON transactions (from_account_id);
-CREATE INDEX idx_transactions_to_account   ON transactions (to_account_id);
+CREATE INDEX idx_transactions_to_account ON transactions (to_account_id);
 
--- transactions: sort theo thời gian (DESC vì query mới nhất trước)
 CREATE INDEX idx_transactions_created_at ON transactions (created_at DESC);
 
--- transactions: filter theo status — admin dashboard
 CREATE INDEX idx_transactions_status ON transactions (status);
 
--- audit_logs: hay query theo transaction
 CREATE INDEX idx_audit_logs_transaction_id ON audit_logs (transaction_id);
 
--- JSONB index — cho phép query vào bên trong payload
--- Ví dụ: WHERE payload->>'status' = 'FAILED'
 CREATE INDEX idx_audit_logs_payload ON audit_logs USING GIN (payload);
 
--- ── TRIGGER: auto-update updated_at ─────────────────────────
--- Thay vì dùng @UpdateTimestamp của Hibernate, enforce ở DB
--- Đảm bảo updated_at luôn đúng dù có ai update trực tiếp bằng SQL
-
 CREATE OR REPLACE FUNCTION trigger_set_updated_at()
-RETURNS TRIGGER AS $$
+    RETURNS TRIGGER AS
+$$
 BEGIN
     NEW.updated_at = NOW();
     RETURN NEW;
@@ -163,9 +110,13 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_users_updated_at
-    BEFORE UPDATE ON users
-    FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+    BEFORE UPDATE
+    ON users
+    FOR EACH ROW
+EXECUTE FUNCTION trigger_set_updated_at();
 
 CREATE TRIGGER trg_accounts_updated_at
-    BEFORE UPDATE ON accounts
-    FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+    BEFORE UPDATE
+    ON accounts
+    FOR EACH ROW
+EXECUTE FUNCTION trigger_set_updated_at();

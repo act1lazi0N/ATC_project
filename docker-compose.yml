@@ -6,9 +6,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: transfer_db
-      POSTGRES_USER: transfer_user
-      POSTGRES_PASSWORD: transfer_pass
+      POSTGRES_DB: ${POSTGRES_DB:-transfer_db}
+      POSTGRES_USER: ${POSTGRES_USER:-transfer_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-transfer_pass}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -46,9 +46,9 @@ services:
       - "8080:8080"
     environment:
       # DataSource
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/transfer_db
-      SPRING_DATASOURCE_USERNAME: transfer_user
-      SPRING_DATASOURCE_PASSWORD: transfer_pass
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-transfer_db}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-transfer_user}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-transfer_pass}
 
       # Redis
       SPRING_DATA_REDIS_HOST: redis

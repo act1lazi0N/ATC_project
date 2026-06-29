@@ -1,6 +1,8 @@
 spring:
   application:
     name: aries_transaction
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:default}
   config:
     import: optional:file:.env[.properties]
   datasource:

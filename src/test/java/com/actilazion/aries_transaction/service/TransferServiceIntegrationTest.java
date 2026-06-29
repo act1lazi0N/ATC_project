@@ -21,6 +21,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -48,11 +50,20 @@ public class TransferServiceIntegrationTest {
     AuditLogRepository auditLogRepository;
     @Autowired
     UserRepository userRepository;
+    @Autowired
+    IdempotencyService idempotencyService;
 
-    private final IdempotencyService idempotencyService = mock(IdempotencyService.class);
     private User sender;
     private Account senderAccount;
     private Account receiverAccount;
+
+    @TestConfiguration
+    static class TestConfig {
+        @Bean
+        IdempotencyService idempotencyService() {
+            return mock(IdempotencyService.class);
+        }
+    }
 
     @BeforeEach
     void setUp() {
@@ -113,6 +124,7 @@ public class TransferServiceIntegrationTest {
         assertThat(response.completedAt()).isNotNull();
 
         //Check balance
+        em.flush();
         em.clear();
         Account updatedSender = accountRepository.findById(senderAccount.getId()).orElseThrow();
         Account updatedReceiver = accountRepository.findById(receiverAccount.getId()).orElseThrow();
@@ -242,6 +254,7 @@ public class TransferServiceIntegrationTest {
 
         assertThat(response.status()).isEqualTo(TransactionStatus.COMPLETED);
 
+        em.flush();
         em.clear();
         assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
                 .isEqualByComparingTo("0");

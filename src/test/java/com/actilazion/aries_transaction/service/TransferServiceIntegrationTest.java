@@ -9,7 +9,7 @@ import com.actilazion.aries_transaction.entity.enums.OutboxEventStatus;
 import com.actilazion.aries_transaction.entity.enums.Role;
 import com.actilazion.aries_transaction.entity.enums.TransactionStatus;
 import com.actilazion.aries_transaction.exception.AccountNotActiveException;
-import com.actilazion.aries_transaction.exception.DuplicateTransferException;
+import com.actilazion.aries_transaction.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.exception.InsufficientBalanceException;
 import com.actilazion.aries_transaction.exception.SelfTransferException;
 import com.actilazion.aries_transaction.repository.AccountRepository;
@@ -261,8 +261,8 @@ public class TransferServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("Duplicated Idempotency key -> DuplicateTransferException")
-    void transfer_duplicateIdempotencyKey_throwsException() {
+    @DisplayName("Duplicated Idempotency key with same request -> returns original response")
+    void transfer_duplicateIdempotencyKey_returnsOriginalResponse() {
         String sameKey = UUID.randomUUID().toString();
         when(idempotencyService.tryConsume(sameKey))
                 .thenReturn(true)
@@ -278,13 +278,51 @@ public class TransferServiceIntegrationTest {
         );
 
         // 1# Successful transfer
-        transferService.transfer(request, sender.getEmail());
+        var firstResponse = transferService.transfer(request, sender.getEmail());
 
-        // 2# Duplicate transfer
-        assertThatThrownBy(() -> transferService.transfer(request, sender.getEmail()))
-                .isInstanceOf(DuplicateTransferException.class);
+        // 2# Duplicate retry should return original result, not reject or transfer again.
+        var secondResponse = transferService.transfer(request, sender.getEmail());
 
         // Only 1 transaction should be created
+        assertThat(secondResponse).isEqualTo(firstResponse);
+        assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
+
+        em.flush();
+        em.clear();
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("4900000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1100000");
+    }
+
+    @Test
+    @DisplayName("Duplicated Idempotency key with different request -> IdempotencyConflictException")
+    void transfer_duplicateIdempotencyKeyWithDifferentRequest_throwsConflict() {
+        String sameKey = UUID.randomUUID().toString();
+
+        var originalRequest = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("100000"),
+                sameKey,
+                "VND",
+                null
+        );
+        var conflictingRequest = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("200000"),
+                sameKey,
+                "VND",
+                null
+        );
+
+        transferService.transfer(originalRequest, sender.getEmail());
+
+        assertThatThrownBy(() -> transferService.transfer(conflictingRequest, sender.getEmail()))
+                .isInstanceOf(IdempotencyConflictException.class);
+
         assertThat(transactionRepository.count()).isEqualTo(1);
         assertThat(outboxEventRepository.count()).isEqualTo(1);
     }

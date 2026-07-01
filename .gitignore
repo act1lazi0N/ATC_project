@@ -62,4 +62,5 @@ redis_data/
 .codex
 AGENTS.md
 .codex/
+.maven/
 

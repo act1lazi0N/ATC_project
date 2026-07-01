@@ -2,11 +2,11 @@ package com.actilazion.aries_transaction.repository;
 
 import com.actilazion.aries_transaction.entity.Transaction;
 import com.actilazion.aries_transaction.entity.enums.TransactionStatus;
-import io.lettuce.core.dynamic.annotation.Param;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;

@@ -5,6 +5,7 @@ import com.actilazion.aries_transaction.entity.Account;
 import com.actilazion.aries_transaction.entity.User;
 import com.actilazion.aries_transaction.entity.enums.AccountStatus;
 import com.actilazion.aries_transaction.entity.enums.AccountType;
+import com.actilazion.aries_transaction.entity.enums.OutboxEventStatus;
 import com.actilazion.aries_transaction.entity.enums.Role;
 import com.actilazion.aries_transaction.entity.enums.TransactionStatus;
 import com.actilazion.aries_transaction.exception.AccountNotActiveException;
@@ -13,8 +14,10 @@ import com.actilazion.aries_transaction.exception.InsufficientBalanceException;
 import com.actilazion.aries_transaction.exception.SelfTransferException;
 import com.actilazion.aries_transaction.repository.AccountRepository;
 import com.actilazion.aries_transaction.repository.AuditLogRepository;
+import com.actilazion.aries_transaction.repository.OutboxEventRepository;
 import com.actilazion.aries_transaction.repository.TransactionRepository;
 import com.actilazion.aries_transaction.repository.UserRepository;
+import com.actilazion.aries_transaction.service.impl.TransferServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,7 +40,7 @@ import static org.mockito.Mockito.when;
 
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({TransferService.class, AuditLogService.class})
+@Import({TransferServiceImpl.class, AuditLogService.class, OutboxEventService.class})
 public class TransferServiceIntegrationTest {
     @Autowired
     TestEntityManager em;
@@ -48,6 +51,8 @@ public class TransferServiceIntegrationTest {
     TransactionRepository transactionRepository;
     @Autowired
     AuditLogRepository auditLogRepository;
+    @Autowired
+    OutboxEventRepository outboxEventRepository;
     @Autowired
     UserRepository userRepository;
     @Autowired
@@ -134,6 +139,50 @@ public class TransferServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("Transferred successfully: writes one TransferCompleted outbox event")
+    void transfer_success_outboxEventCreated() {
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("750000"),
+                UUID.randomUUID().toString(),
+                "VND",
+                "Reporting sync test"
+        );
+
+        var response = transferService.transfer(request, sender.getEmail());
+
+        em.flush();
+        em.clear();
+
+        var events = outboxEventRepository.findAll();
+        assertThat(events).hasSize(1);
+
+        var event = events.getFirst();
+        assertThat(event.getAggregateType()).isEqualTo("Transaction");
+        assertThat(event.getAggregateId()).isEqualTo(response.id());
+        assertThat(event.getEventType()).isEqualTo("TransferCompleted");
+        assertThat(event.getStatus()).isEqualTo(OutboxEventStatus.PENDING);
+        assertThat(event.getPublishedAt()).isNull();
+
+        assertThat(event.getPayload())
+                .containsEntry("transactionId", response.id().toString())
+                .containsEntry("fromAccountId", senderAccount.getId().toString())
+                .containsEntry("toAccountId", receiverAccount.getId().toString())
+                .containsEntry("userId", sender.getId().toString())
+                .containsEntry("fromUserFullName", "Nguyen Van A")
+                .containsEntry("toUserFullName", "Tran Thi B")
+                .containsEntry("fromAccountNumber", "ACC-001")
+                .containsEntry("toAccountNumber", "ACC-002")
+                .containsEntry("amount", "750000")
+                .containsEntry("currency", "VND")
+                .containsEntry("status", "COMPLETED")
+                .containsEntry("description", "Reporting sync test");
+        assertThat(event.getPayload().get("createdAt")).isNotNull();
+        assertThat(event.getPayload().get("completedAt")).isNotNull();
+    }
+
+    @Test
     @DisplayName("Transferred Successfully: must have 2 audit log (INITIATED + COMPLETED)")
     void transfer_success_auditLogsCreated() {
         var request = new TransferRequest(
@@ -171,6 +220,7 @@ public class TransferServiceIntegrationTest {
         em.clear();
         assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
                 .isEqualByComparingTo("5000000");
+        assertThat(outboxEventRepository.count()).isZero();
     }
 
     @Test
@@ -236,6 +286,7 @@ public class TransferServiceIntegrationTest {
 
         // Only 1 transaction should be created
         assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
     }
 
     @Test

@@ -21,3 +21,10 @@ spring:
 jwt:
   secret: dGhpcyBpcyBhIHZlcnkgbG9uZyBzZWNyZXQga2V5IGZvciB0ZXN0cw==
   expiration: 86400
+
+app:
+  outbox:
+    worker-enabled: false
+    publisher: noop
+    batch-size: 25
+    poll-interval-ms: 5000

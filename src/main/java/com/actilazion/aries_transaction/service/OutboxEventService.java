@@ -7,9 +7,13 @@ import com.actilazion.aries_transaction.entity.enums.OutboxEventStatus;
 import com.actilazion.aries_transaction.repository.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -19,6 +23,7 @@ public class OutboxEventService {
 
     private final OutboxEventRepository outboxEventRepository;
 
+    @Transactional
     public void recordTransferCompleted(Transaction tx) {
         boolean alreadyRecorded = outboxEventRepository
                 .findByAggregateTypeAndAggregateIdAndEventType(
@@ -38,6 +43,31 @@ public class OutboxEventService {
                 .payload(toPayload(tx))
                 .status(OutboxEventStatus.PENDING)
                 .build();
+        outboxEventRepository.save(event);
+    }
+
+    @Transactional(readOnly = true)
+    public List<OutboxEvent> findPendingEvents(int limit) {
+        return outboxEventRepository.findAllByStatusOrderByCreatedAtAsc(OutboxEventStatus.PENDING)
+                .stream()
+                .limit(limit)
+                .toList();
+    }
+
+    @Transactional
+    public void markPublished(UUID eventId) {
+        OutboxEvent event = outboxEventRepository.findById(eventId)
+                .orElseThrow(() -> new IllegalArgumentException("Outbox event not found: " + eventId));
+        event.setStatus(OutboxEventStatus.PUBLISHED);
+        event.setPublishedAt(OffsetDateTime.now());
+        outboxEventRepository.save(event);
+    }
+
+    @Transactional
+    public void markFailed(UUID eventId) {
+        OutboxEvent event = outboxEventRepository.findById(eventId)
+                .orElseThrow(() -> new IllegalArgumentException("Outbox event not found: " + eventId));
+        event.setStatus(OutboxEventStatus.FAILED);
         outboxEventRepository.save(event);
     }
 

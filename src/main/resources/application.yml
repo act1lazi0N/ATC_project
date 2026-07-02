@@ -35,6 +35,13 @@ jwt:
   secret: ${JWT_SECRET}
   expiration: 86400
 
+app:
+  outbox:
+    worker-enabled: ${OUTBOX_WORKER_ENABLED:false}
+    publisher: ${OUTBOX_PUBLISHER:noop}
+    batch-size: ${OUTBOX_BATCH_SIZE:25}
+    poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:5000}
+
 logging:
   level:
     com.transfer: DEBUG

@@ -2,18 +2,22 @@ package com.actilazion.aries_transaction.service;
 
 import com.actilazion.aries_transaction.dto.requests.TransferRequest;
 import com.actilazion.aries_transaction.entity.Account;
+import com.actilazion.aries_transaction.entity.LedgerEntry;
 import com.actilazion.aries_transaction.entity.User;
 import com.actilazion.aries_transaction.entity.enums.AccountStatus;
 import com.actilazion.aries_transaction.entity.enums.AccountType;
+import com.actilazion.aries_transaction.entity.enums.LedgerDirection;
+import com.actilazion.aries_transaction.entity.enums.LedgerEntryType;
 import com.actilazion.aries_transaction.entity.enums.OutboxEventStatus;
 import com.actilazion.aries_transaction.entity.enums.Role;
 import com.actilazion.aries_transaction.entity.enums.TransactionStatus;
 import com.actilazion.aries_transaction.exception.AccountNotActiveException;
-import com.actilazion.aries_transaction.exception.DuplicateTransferException;
+import com.actilazion.aries_transaction.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.exception.InsufficientBalanceException;
 import com.actilazion.aries_transaction.exception.SelfTransferException;
 import com.actilazion.aries_transaction.repository.AccountRepository;
 import com.actilazion.aries_transaction.repository.AuditLogRepository;
+import com.actilazion.aries_transaction.repository.LedgerEntryRepository;
 import com.actilazion.aries_transaction.repository.OutboxEventRepository;
 import com.actilazion.aries_transaction.repository.TransactionRepository;
 import com.actilazion.aries_transaction.repository.UserRepository;
@@ -30,6 +34,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,7 +45,7 @@ import static org.mockito.Mockito.when;
 
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({TransferServiceImpl.class, AuditLogService.class, OutboxEventService.class})
+@Import({TransferServiceImpl.class, AuditLogService.class, OutboxEventService.class, LedgerService.class})
 public class TransferServiceIntegrationTest {
     @Autowired
     TestEntityManager em;
@@ -53,6 +58,8 @@ public class TransferServiceIntegrationTest {
     AuditLogRepository auditLogRepository;
     @Autowired
     OutboxEventRepository outboxEventRepository;
+    @Autowired
+    LedgerEntryRepository ledgerEntryRepository;
     @Autowired
     UserRepository userRepository;
     @Autowired
@@ -139,6 +146,48 @@ public class TransferServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("Transferred successfully: creates balanced transfer ledger entries")
+    void transfer_success_ledgerEntriesCreated() {
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("1250000"),
+                UUID.randomUUID().toString(),
+                "VND",
+                "Ledger invariant test"
+        );
+
+        var response = transferService.transfer(request, sender.getEmail());
+
+        em.flush();
+        em.clear();
+
+        List<LedgerEntry> entries = ledgerEntryRepository.findAllByTransactionId(response.id());
+        assertThat(entries).hasSize(2);
+
+        LedgerEntry debit = entries.stream()
+                .filter(entry -> entry.getDirection() == LedgerDirection.DEBIT)
+                .findFirst()
+                .orElseThrow();
+        LedgerEntry credit = entries.stream()
+                .filter(entry -> entry.getDirection() == LedgerDirection.CREDIT)
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(debit.getAccount().getId()).isEqualTo(senderAccount.getId());
+        assertThat(credit.getAccount().getId()).isEqualTo(receiverAccount.getId());
+        assertThat(debit.getAmount()).isEqualByComparingTo("1250000");
+        assertThat(credit.getAmount()).isEqualByComparingTo("1250000");
+        assertThat(debit.getAmount()).isEqualByComparingTo(credit.getAmount());
+        assertThat(debit.getCurrency()).isEqualTo("VND");
+        assertThat(credit.getCurrency()).isEqualTo("VND");
+        assertThat(debit.getEntryType()).isEqualTo(LedgerEntryType.TRANSFER);
+        assertThat(credit.getEntryType()).isEqualTo(LedgerEntryType.TRANSFER);
+        assertThat(debit.getTransaction().getId()).isEqualTo(response.id());
+        assertThat(credit.getTransaction().getId()).isEqualTo(response.id());
+    }
+
+    @Test
     @DisplayName("Transferred successfully: writes one TransferCompleted outbox event")
     void transfer_success_outboxEventCreated() {
         var request = new TransferRequest(
@@ -221,6 +270,7 @@ public class TransferServiceIntegrationTest {
         assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
                 .isEqualByComparingTo("5000000");
         assertThat(outboxEventRepository.count()).isZero();
+        assertThat(ledgerEntryRepository.count()).isZero();
     }
 
     @Test
@@ -261,8 +311,8 @@ public class TransferServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("Duplicated Idempotency key -> DuplicateTransferException")
-    void transfer_duplicateIdempotencyKey_throwsException() {
+    @DisplayName("Duplicated Idempotency key with same request -> returns original response")
+    void transfer_duplicateIdempotencyKey_returnsOriginalResponse() {
         String sameKey = UUID.randomUUID().toString();
         when(idempotencyService.tryConsume(sameKey))
                 .thenReturn(true)
@@ -278,15 +328,55 @@ public class TransferServiceIntegrationTest {
         );
 
         // 1# Successful transfer
-        transferService.transfer(request, sender.getEmail());
+        var firstResponse = transferService.transfer(request, sender.getEmail());
 
-        // 2# Duplicate transfer
-        assertThatThrownBy(() -> transferService.transfer(request, sender.getEmail()))
-                .isInstanceOf(DuplicateTransferException.class);
+        // 2# Duplicate retry should return original result, not reject or transfer again.
+        var secondResponse = transferService.transfer(request, sender.getEmail());
 
         // Only 1 transaction should be created
+        assertThat(secondResponse).isEqualTo(firstResponse);
         assertThat(transactionRepository.count()).isEqualTo(1);
         assertThat(outboxEventRepository.count()).isEqualTo(1);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(2);
+
+        em.flush();
+        em.clear();
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("4900000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1100000");
+    }
+
+    @Test
+    @DisplayName("Duplicated Idempotency key with different request -> IdempotencyConflictException")
+    void transfer_duplicateIdempotencyKeyWithDifferentRequest_throwsConflict() {
+        String sameKey = UUID.randomUUID().toString();
+
+        var originalRequest = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("100000"),
+                sameKey,
+                "VND",
+                null
+        );
+        var conflictingRequest = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("200000"),
+                sameKey,
+                "VND",
+                null
+        );
+
+        transferService.transfer(originalRequest, sender.getEmail());
+
+        assertThatThrownBy(() -> transferService.transfer(conflictingRequest, sender.getEmail()))
+                .isInstanceOf(IdempotencyConflictException.class);
+
+        assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(2);
     }
 
     @Test

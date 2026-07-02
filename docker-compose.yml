@@ -6,13 +6,13 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-transfer_db}
+      POSTGRES_DB: ${POSTGRES_DB:-aries_transaction_db}
       POSTGRES_USER: ${POSTGRES_USER:-transfer_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-transfer_pass}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U transfer_user -d transfer_db" ]
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-transfer_user} -d $${POSTGRES_DB:-aries_transaction_db}" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -46,7 +46,7 @@ services:
       - "8080:8080"
     environment:
       # DataSource
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-transfer_db}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-aries_transaction_db}
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-transfer_user}
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-transfer_pass}
 

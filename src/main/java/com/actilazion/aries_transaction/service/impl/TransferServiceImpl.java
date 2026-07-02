@@ -19,6 +19,7 @@ import com.actilazion.aries_transaction.repository.TransactionRepository;
 import com.actilazion.aries_transaction.repository.UserRepository;
 import com.actilazion.aries_transaction.service.AuditLogService;
 import com.actilazion.aries_transaction.service.IdempotencyService;
+import com.actilazion.aries_transaction.service.LedgerService;
 import com.actilazion.aries_transaction.service.OutboxEventService;
 import com.actilazion.aries_transaction.service.TransferService;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,7 @@ public class TransferServiceImpl implements TransferService {
     private final AuditLogService auditLogService;
     private final IdempotencyService idempotencyService;
     private final OutboxEventService outboxEventService;
+    private final LedgerService ledgerService;
 
     @Override
     @Transactional
@@ -136,6 +138,7 @@ public class TransferServiceImpl implements TransferService {
         transactionRepository.save(tx);
         transactionRepository.flush();
 
+        ledgerService.recordTransfer(tx);
         outboxEventService.recordTransferCompleted(tx);
 
         auditLogService.log(tx, AuditEventType.TRANSFER_COMPLETED, initiatorEmail);

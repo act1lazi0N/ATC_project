@@ -1,0 +1,16 @@
+package com.actilazion.aries_transaction.transaction.application;
+
+import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
+import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
+import java.util.UUID;
+
+public interface TransferService {
+    TransactionResponse transfer(TransferRequest request, String initiatorEmail);
+
+    TransactionResponse getById(UUID txId);
+
+    Page<TransactionResponse> getByAccount(UUID accountId, Pageable pageable);
+}

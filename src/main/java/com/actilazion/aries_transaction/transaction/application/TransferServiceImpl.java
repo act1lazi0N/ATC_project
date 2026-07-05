@@ -11,6 +11,7 @@ import com.actilazion.aries_transaction.account.domain.AccountStatus;
 import com.actilazion.aries_transaction.audit.domain.AuditEventType;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecord;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecordStatus;
+import com.actilazion.aries_transaction.transaction.domain.TransactionStateGuard;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.exception.AccountNotActiveException;
 import com.actilazion.aries_transaction.transaction.exception.CurrencyMismatchException;
@@ -18,7 +19,6 @@ import com.actilazion.aries_transaction.transaction.exception.DuplicateTransferE
 import com.actilazion.aries_transaction.transaction.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.transaction.exception.InsufficientBalanceException;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
-import com.actilazion.aries_transaction.transaction.exception.InvalidTransactionStateTransitionException;
 import com.actilazion.aries_transaction.transaction.exception.RefundAmountExceededException;
 import com.actilazion.aries_transaction.transaction.exception.SelfTransferException;
 import com.actilazion.aries_transaction.account.persistence.AccountRepository;
@@ -199,9 +199,7 @@ public class TransferServiceImpl implements TransferService {
     }
 
     private TransactionResponse doReverse(Transaction original, ReversalRequest request, String initiatorEmail) {
-        if (original.getStatus() != TransactionStatus.COMPLETED) {
-            throw new InvalidTransactionStateTransitionException(original.getStatus(), TransactionStatus.REVERSED);
-        }
+        TransactionStateGuard.assertCanReverse(original);
 
         Account fromAccount = original.getToAccount();
         Account toAccount = original.getFromAccount();
@@ -241,10 +239,7 @@ public class TransferServiceImpl implements TransferService {
     }
 
     private TransactionResponse doRefund(Transaction original, RefundRequest request, String initiatorEmail) {
-        if (original.getStatus() != TransactionStatus.COMPLETED
-                && original.getStatus() != TransactionStatus.PARTIALLY_REFUNDED) {
-            throw new InvalidTransactionStateTransitionException(original.getStatus(), TransactionStatus.REFUNDED);
-        }
+        TransactionStateGuard.assertCanRefund(original);
 
         BigDecimal alreadyRefunded = original.getRefundedAmount() != null
                 ? original.getRefundedAmount()

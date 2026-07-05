@@ -12,6 +12,7 @@ import com.actilazion.aries_transaction.ledger.domain.LedgerDirection;
 import com.actilazion.aries_transaction.ledger.domain.LedgerEntryType;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEventStatus;
 import com.actilazion.aries_transaction.identity.domain.Role;
+import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.exception.AccountNotActiveException;
 import com.actilazion.aries_transaction.transaction.exception.CurrencyMismatchException;
@@ -507,6 +508,105 @@ public class TransferServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("Reverse duplicate idempotency key with same request returns original response")
+    void reverse_duplicateIdempotencyKeySameRequest_returnsOriginalResponse() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        String sameKey = UUID.randomUUID().toString();
+        var request = new ReversalRequest(sameKey, "Reverse once");
+
+        var firstResponse = transferService.reverse(transfer.id(), request, sender.getEmail());
+        var secondResponse = transferService.reverse(transfer.id(), request, sender.getEmail());
+
+        assertThat(secondResponse).isEqualTo(firstResponse);
+        assertThat(transactionRepository.count()).isEqualTo(2);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(4);
+        assertThat(outboxEventRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Reverse duplicate idempotency key with different request throws conflict")
+    void reverse_duplicateIdempotencyKeyDifferentRequest_throwsConflict() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        String sameKey = UUID.randomUUID().toString();
+
+        transferService.reverse(
+                transfer.id(),
+                new ReversalRequest(sameKey, "Reverse once"),
+                sender.getEmail()
+        );
+
+        assertThatThrownBy(() -> transferService.reverse(
+                transfer.id(),
+                new ReversalRequest(sameKey, "Different reason"),
+                sender.getEmail()
+        )).isInstanceOf(IdempotencyConflictException.class);
+
+        assertThat(transactionRepository.count()).isEqualTo(2);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(4);
+        assertThat(outboxEventRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Reverse rejects non-completed transaction states")
+    void reverse_nonCompletedStates_throwsInvalidState() {
+        for (TransactionStatus status : List.of(
+                TransactionStatus.PENDING,
+                TransactionStatus.FAILED,
+                TransactionStatus.REVERSED,
+                TransactionStatus.REFUNDED,
+                TransactionStatus.PARTIALLY_REFUNDED
+        )) {
+            Transaction tx = persistTransactionWithStatus(status);
+
+            assertThatThrownBy(() -> transferService.reverse(
+                    tx.getId(),
+                    new ReversalRequest(UUID.randomUUID().toString(), null),
+                    sender.getEmail()
+            )).isInstanceOf(InvalidTransactionStateTransitionException.class);
+        }
+    }
+
+    @Test
+    @DisplayName("Reverse rejects inactive refund source account")
+    void reverse_inactiveReceiverAccount_throwsAccountNotActive() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        receiverAccount.setStatus(AccountStatus.FROZEN);
+        accountRepository.save(receiverAccount);
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> transferService.reverse(
+                transfer.id(),
+                new ReversalRequest(UUID.randomUUID().toString(), null),
+                sender.getEmail()
+        )).isInstanceOf(AccountNotActiveException.class);
+
+        assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(2);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Reverse rejects insufficient balance on refund source account")
+    void reverse_receiverInsufficientBalance_throwsInsufficientBalance() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        receiverAccount.setBalance(new BigDecimal("100000"));
+        accountRepository.save(receiverAccount);
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> transferService.reverse(
+                transfer.id(),
+                new ReversalRequest(UUID.randomUUID().toString(), null),
+                sender.getEmail()
+        )).isInstanceOf(InsufficientBalanceException.class);
+
+        assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(2);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("Partial then full refund updates original status and creates refund ledger")
     void refund_partialThenFull_success() {
         var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
@@ -575,6 +675,106 @@ public class TransferServiceIntegrationTest {
         assertThat(outboxEventRepository.count()).isEqualTo(2);
     }
 
+    @Test
+    @DisplayName("Refund duplicate idempotency key with same request returns original response")
+    void refund_duplicateIdempotencyKeySameRequest_returnsOriginalResponse() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        String sameKey = UUID.randomUUID().toString();
+        var request = new RefundRequest(new BigDecimal("400000"), sameKey, "Refund once");
+
+        var firstResponse = transferService.refund(transfer.id(), request, sender.getEmail());
+        var secondResponse = transferService.refund(transfer.id(), request, sender.getEmail());
+
+        assertThat(secondResponse).isEqualTo(firstResponse);
+        assertThat(transactionRepository.count()).isEqualTo(2);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(4);
+        assertThat(outboxEventRepository.count()).isEqualTo(2);
+        assertThat(transactionRepository.findById(transfer.id()).orElseThrow().getRefundedAmount())
+                .isEqualByComparingTo("400000");
+    }
+
+    @Test
+    @DisplayName("Refund duplicate idempotency key with different request throws conflict")
+    void refund_duplicateIdempotencyKeyDifferentRequest_throwsConflict() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        String sameKey = UUID.randomUUID().toString();
+
+        transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400000"), sameKey, "Refund once"),
+                sender.getEmail()
+        );
+
+        assertThatThrownBy(() -> transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("500000"), sameKey, "Refund once"),
+                sender.getEmail()
+        )).isInstanceOf(IdempotencyConflictException.class);
+
+        assertThat(transactionRepository.count()).isEqualTo(2);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(4);
+        assertThat(outboxEventRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Refund rejects non-refundable transaction states")
+    void refund_nonRefundableStates_throwsInvalidState() {
+        for (TransactionStatus status : List.of(
+                TransactionStatus.PENDING,
+                TransactionStatus.FAILED,
+                TransactionStatus.REVERSED,
+                TransactionStatus.REFUNDED
+        )) {
+            Transaction tx = persistTransactionWithStatus(status);
+
+            assertThatThrownBy(() -> transferService.refund(
+                    tx.getId(),
+                    new RefundRequest(new BigDecimal("100000"), UUID.randomUUID().toString(), null),
+                    sender.getEmail()
+            )).isInstanceOf(InvalidTransactionStateTransitionException.class);
+        }
+    }
+
+    @Test
+    @DisplayName("Refund rejects inactive refund source account")
+    void refund_inactiveReceiverAccount_throwsAccountNotActive() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        receiverAccount.setStatus(AccountStatus.FROZEN);
+        accountRepository.save(receiverAccount);
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), null),
+                sender.getEmail()
+        )).isInstanceOf(AccountNotActiveException.class);
+
+        assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(2);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Refund rejects insufficient balance on refund source account")
+    void refund_receiverInsufficientBalance_throwsInsufficientBalance() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        receiverAccount.setBalance(new BigDecimal("100000"));
+        accountRepository.save(receiverAccount);
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), null),
+                sender.getEmail()
+        )).isInstanceOf(InsufficientBalanceException.class);
+
+        assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(2);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
+    }
+
     private TransferRequest transferRequest(String amount) {
         return new TransferRequest(
                 senderAccount.getId().toString(),
@@ -584,6 +784,19 @@ public class TransferServiceIntegrationTest {
                 "VND",
                 null
         );
+    }
+
+    private Transaction persistTransactionWithStatus(TransactionStatus status) {
+        Transaction tx = Transaction.builder()
+                .fromAccount(senderAccount)
+                .toAccount(receiverAccount)
+                .initiatedBy(sender)
+                .amount(new BigDecimal("100000"))
+                .currency("VND")
+                .idempotencyKey(UUID.randomUUID().toString())
+                .status(status)
+                .build();
+        return transactionRepository.saveAndFlush(tx);
     }
 
 }

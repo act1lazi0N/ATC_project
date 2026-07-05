@@ -18,6 +18,8 @@ public record TransactionResponse(
         String idempotencyKey,
         String description,
         String failureReason,
+        UUID originalTransactionId,
+        BigDecimal refundedAmount,
         OffsetDateTime createdAt,
         OffsetDateTime completedAt
 ) {
@@ -32,6 +34,8 @@ public record TransactionResponse(
                 tx.getIdempotencyKey(),
                 tx.getDescription(),
                 tx.getFailureReason(),
+                tx.getOriginalTransaction() != null ? tx.getOriginalTransaction().getId() : null,
+                tx.getRefundedAmount(),
                 tx.getCreatedAt(),
                 tx.getCompletedAt()
         );

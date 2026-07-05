@@ -1,5 +1,7 @@
 package com.actilazion.aries_transaction.transaction.application;
 
+import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
+import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import org.springframework.data.domain.Page;
@@ -9,6 +11,10 @@ import java.util.UUID;
 
 public interface TransferService {
     TransactionResponse transfer(TransferRequest request, String initiatorEmail);
+
+    TransactionResponse reverse(UUID originalTransactionId, ReversalRequest request, String initiatorEmail);
+
+    TransactionResponse refund(UUID originalTransactionId, RefundRequest request, String initiatorEmail);
 
     TransactionResponse getById(UUID txId);
 

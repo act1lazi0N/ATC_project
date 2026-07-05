@@ -19,6 +19,20 @@ public class LedgerService {
 
     @Transactional
     public void recordTransfer(Transaction tx) {
+        recordPairedEntries(tx, LedgerEntryType.TRANSFER);
+    }
+
+    @Transactional
+    public void recordReversal(Transaction tx) {
+        recordPairedEntries(tx, LedgerEntryType.REVERSAL);
+    }
+
+    @Transactional
+    public void recordRefund(Transaction tx) {
+        recordPairedEntries(tx, LedgerEntryType.REFUND);
+    }
+
+    private void recordPairedEntries(Transaction tx, LedgerEntryType entryType) {
         if (ledgerEntryRepository.countByTransactionId(tx.getId()) > 0) {
             return;
         }
@@ -29,7 +43,7 @@ public class LedgerService {
                 .direction(LedgerDirection.DEBIT)
                 .amount(tx.getAmount())
                 .currency(tx.getCurrency())
-                .entryType(LedgerEntryType.TRANSFER)
+                .entryType(entryType)
                 .build();
 
         LedgerEntry credit = LedgerEntry.builder()
@@ -38,7 +52,7 @@ public class LedgerService {
                 .direction(LedgerDirection.CREDIT)
                 .amount(tx.getAmount())
                 .currency(tx.getCurrency())
-                .entryType(LedgerEntryType.TRANSFER)
+                .entryType(entryType)
                 .build();
 
         List<LedgerEntry> entries = List.of(debit, credit);

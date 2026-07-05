@@ -1,5 +1,7 @@
 package com.actilazion.aries_transaction.transaction.api;
 
+import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
+import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
 import com.actilazion.aries_transaction.common.dto.ApiResponse;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
@@ -36,6 +38,28 @@ public class TransferController {
     ) {
         TransactionResponse response = transferService.transfer(request, userDetails.getUsername());
         return ResponseEntity.ok(ApiResponse.ok("Transfer completed successfully", response));
+    }
+
+    @PostMapping("/{id}/reverse")
+    @Operation(summary = "Reverse a completed transaction")
+    public ResponseEntity<ApiResponse<TransactionResponse>> reverse(
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody ReversalRequest request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        TransactionResponse response = transferService.reverse(id, request, userDetails.getUsername());
+        return ResponseEntity.ok(ApiResponse.ok("Transaction reversed successfully", response));
+    }
+
+    @PostMapping("/{id}/refund")
+    @Operation(summary = "Refund a completed transaction")
+    public ResponseEntity<ApiResponse<TransactionResponse>> refund(
+            @PathVariable("id") UUID id,
+            @Valid @RequestBody RefundRequest request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        TransactionResponse response = transferService.refund(id, request, userDetails.getUsername());
+        return ResponseEntity.ok(ApiResponse.ok("Transaction refunded successfully", response));
     }
 
     @GetMapping("/{id}")

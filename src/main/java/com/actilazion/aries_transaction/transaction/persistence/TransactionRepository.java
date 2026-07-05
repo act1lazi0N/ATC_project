@@ -1,7 +1,6 @@
 package com.actilazion.aries_transaction.transaction.persistence;
 
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
-import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -18,10 +17,6 @@ import java.util.UUID;
 @Repository
 public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
 
-    // Check idempotency key before processing
-    Optional<Transaction> findByIdempotencyKey(String idempotencyKey);
-    boolean existsByIdempotencyKey(String idempotencyKey);
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT t FROM Transaction t WHERE t.id = :id")
     Optional<Transaction> findByIdWithLock(@Param("id") UUID id);
@@ -35,10 +30,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     """)
     Page<Transaction> findAllByAccountId(
             @Param("accountId") UUID accountId,
-            Pageable pageable
+        Pageable pageable
     );
-
-    Page<Transaction> findAllByStatus(TransactionStatus status, Pageable pageable);
 
     @Query("""
     SELECT t FROM Transaction t

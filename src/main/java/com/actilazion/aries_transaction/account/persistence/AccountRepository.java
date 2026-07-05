@@ -1,7 +1,6 @@
 package com.actilazion.aries_transaction.account.persistence;
 
 import com.actilazion.aries_transaction.account.domain.Account;
-import com.actilazion.aries_transaction.account.domain.AccountStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -20,8 +19,8 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM Account a WHERE a.id = :id")
     Optional<Account> findByIdWithLock(@Param("id") UUID id);
-    Optional<Account> findByAccountNumber(String accountNumber);
+
     boolean existsByAccountNumber(String accountNumber);
+
     List<Account> findAllByUserId(UUID userId);
-    List<Account> findAllByUserIdAndStatus(UUID userId, AccountStatus status);
 }

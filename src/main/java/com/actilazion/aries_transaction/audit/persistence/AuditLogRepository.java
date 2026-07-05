@@ -1,7 +1,6 @@
 package com.actilazion.aries_transaction.audit.persistence;
 
 import com.actilazion.aries_transaction.audit.domain.AuditLog;
-import com.actilazion.aries_transaction.audit.domain.AuditEventType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -11,5 +10,4 @@ import java.util.UUID;
 @Repository
 public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
     List<AuditLog> findAllByTransactionId(UUID transactionId);
-    List<AuditLog> findAllByTransactionIdAndEventType(UUID transactionId, AuditEventType eventType);
 }

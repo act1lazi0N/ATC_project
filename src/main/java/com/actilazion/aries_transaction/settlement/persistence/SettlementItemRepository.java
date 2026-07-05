@@ -8,5 +8,4 @@ import java.util.UUID;
 
 @Repository
 public interface SettlementItemRepository extends JpaRepository<SettlementItem, UUID> {
-    boolean existsByTransactionId(UUID transactionId);
 }

@@ -10,11 +10,11 @@ import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.persistence.UserRepository;
 import com.actilazion.aries_transaction.ledger.persistence.LedgerEntryRepository;
 import com.actilazion.aries_transaction.outbox.persistence.OutboxEventRepository;
-import com.actilazion.aries_transaction.transaction.application.IdempotencyService;
 import com.actilazion.aries_transaction.transaction.application.TransferService;
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import com.actilazion.aries_transaction.transaction.exception.InsufficientBalanceException;
+import com.actilazion.aries_transaction.transaction.persistence.IdempotencyRecordRepository;
 import com.actilazion.aries_transaction.transaction.persistence.TransactionRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,7 +23,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -37,8 +36,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -48,11 +45,9 @@ class TransferConcurrencyIntegrationTest {
     @Autowired TransactionRepository transactionRepository;
     @Autowired LedgerEntryRepository ledgerEntryRepository;
     @Autowired OutboxEventRepository outboxEventRepository;
+    @Autowired IdempotencyRecordRepository idempotencyRecordRepository;
     @Autowired AuditLogRepository auditLogRepository;
     @Autowired UserRepository userRepository;
-
-    @MockitoBean
-    IdempotencyService idempotencyService;
 
     private User sender;
     private User receiver;
@@ -61,8 +56,6 @@ class TransferConcurrencyIntegrationTest {
 
     @BeforeEach
     void setUp() {
-        when(idempotencyService.tryConsume(anyString())).thenReturn(true);
-
         sender = createUser("sender-" + UUID.randomUUID() + "@test.com", "Sender");
         receiver = createUser("receiver-" + UUID.randomUUID() + "@test.com", "Receiver");
         senderAccount = createAccount(sender, new BigDecimal("1000"));
@@ -74,6 +67,7 @@ class TransferConcurrencyIntegrationTest {
         auditLogRepository.deleteAll();
         ledgerEntryRepository.deleteAll();
         outboxEventRepository.deleteAll();
+        idempotencyRecordRepository.deleteAll();
         transactionRepository.deleteAll();
         accountRepository.deleteAll();
         userRepository.deleteAll();

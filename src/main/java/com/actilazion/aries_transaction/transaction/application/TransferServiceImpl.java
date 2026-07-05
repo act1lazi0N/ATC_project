@@ -7,6 +7,8 @@ import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.account.domain.AccountStatus;
 import com.actilazion.aries_transaction.audit.domain.AuditEventType;
+import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecord;
+import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecordStatus;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.exception.AccountNotActiveException;
 import com.actilazion.aries_transaction.transaction.exception.CurrencyMismatchException;
@@ -32,8 +34,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -51,43 +51,27 @@ public class TransferServiceImpl implements TransferService {
     @Override
     @Transactional
     public TransactionResponse transfer(TransferRequest request, String initiatorEmail) {
-        Optional<Transaction> existing = transactionRepository.findByIdempotencyKey(request.idempotencyKey());
+        var existing = idempotencyService.findByKey(request.idempotencyKey());
         if (existing.isPresent()) {
             return responseForIdempotentRetry(existing.get(), request);
         }
 
-        boolean acquired = idempotencyService.tryConsume(request.idempotencyKey());
-        if (!acquired) {
-            return transactionRepository.findByIdempotencyKey(request.idempotencyKey())
-                    .map(tx -> responseForIdempotentRetry(tx, request))
-                    .orElseThrow(() -> new DuplicateTransferException(request.idempotencyKey()));
-        }
-
-        try {
-            return doTransfer(request, initiatorEmail);
-        } catch (Exception e) {
-            idempotencyService.release(request.idempotencyKey());
-            throw e;
-        }
+        IdempotencyRecord record = idempotencyService.createProcessingRecord(request);
+        TransactionResponse response = doTransfer(request, initiatorEmail);
+        Transaction tx = transactionRepository.getReferenceById(response.id());
+        idempotencyService.markCompleted(record, tx, response);
+        return response;
     }
 
-    private TransactionResponse responseForIdempotentRetry(Transaction tx, TransferRequest request) {
-        if (!matchesOriginalRequest(tx, request)) {
+    private TransactionResponse responseForIdempotentRetry(IdempotencyRecord record, TransferRequest request) {
+        if (!idempotencyService.matchesRequest(record, request)) {
             throw new IdempotencyConflictException(request.idempotencyKey());
         }
-        return TransactionResponse.from(tx);
-    }
 
-    private boolean matchesOriginalRequest(Transaction tx, TransferRequest request) {
-        UUID requestFromId = UUID.fromString(request.fromAccountId());
-        UUID requestToId = UUID.fromString(request.toAccountId());
-        String requestCurrency = request.currency() != null ? request.currency() : tx.getCurrency();
-
-        return tx.getFromAccount().getId().equals(requestFromId)
-                && tx.getToAccount().getId().equals(requestToId)
-                && tx.getAmount().compareTo(request.amount()) == 0
-                && tx.getCurrency().equals(requestCurrency)
-                && Objects.equals(tx.getDescription(), request.description());
+        if (record.getStatus() == IdempotencyRecordStatus.COMPLETED && record.getTransaction() != null) {
+            return TransactionResponse.from(record.getTransaction());
+        }
+        throw new DuplicateTransferException(request.idempotencyKey());
     }
 
     private TransactionResponse doTransfer(TransferRequest request, String initiatorEmail) {

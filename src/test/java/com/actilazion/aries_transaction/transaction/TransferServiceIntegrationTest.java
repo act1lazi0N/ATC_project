@@ -34,8 +34,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -45,13 +43,10 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({TransferServiceImpl.class, AuditLogService.class, OutboxEventService.class, LedgerService.class})
+@Import({TransferServiceImpl.class, AuditLogService.class, OutboxEventService.class, LedgerService.class, IdempotencyService.class})
 public class TransferServiceIntegrationTest {
     @Autowired
     TestEntityManager em;
@@ -68,25 +63,13 @@ public class TransferServiceIntegrationTest {
     LedgerEntryRepository ledgerEntryRepository;
     @Autowired
     UserRepository userRepository;
-    @Autowired
-    IdempotencyService idempotencyService;
 
     private User sender;
     private Account senderAccount;
     private Account receiverAccount;
 
-    @TestConfiguration
-    static class TestConfig {
-        @Bean
-        IdempotencyService idempotencyService() {
-            return mock(IdempotencyService.class);
-        }
-    }
-
     @BeforeEach
     void setUp() {
-        when(idempotencyService.tryConsume(anyString())).thenReturn(true);
-
         sender = userRepository.save(User.builder()
                 .fullName("Nguyen Van A")
                 .email("sender@test.com")
@@ -375,9 +358,6 @@ public class TransferServiceIntegrationTest {
     @DisplayName("Duplicated Idempotency key with same request -> returns original response")
     void transfer_duplicateIdempotencyKey_returnsOriginalResponse() {
         String sameKey = UUID.randomUUID().toString();
-        when(idempotencyService.tryConsume(sameKey))
-                .thenReturn(true)
-                .thenReturn(false);
 
         var request = new TransferRequest(
                 senderAccount.getId().toString(),

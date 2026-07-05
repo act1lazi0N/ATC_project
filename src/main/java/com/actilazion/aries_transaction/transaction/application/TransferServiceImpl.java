@@ -9,6 +9,7 @@ import com.actilazion.aries_transaction.account.domain.AccountStatus;
 import com.actilazion.aries_transaction.audit.domain.AuditEventType;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.exception.AccountNotActiveException;
+import com.actilazion.aries_transaction.transaction.exception.CurrencyMismatchException;
 import com.actilazion.aries_transaction.transaction.exception.DuplicateTransferException;
 import com.actilazion.aries_transaction.transaction.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.transaction.exception.InsufficientBalanceException;
@@ -109,6 +110,7 @@ public class TransferServiceImpl implements TransferService {
 
         validateAccountActive(fromAccount);
         validateAccountActive(toAccount);
+        validateCurrency(fromAccount, toAccount, request.currency());
         validateSufficientBalance(fromAccount, request.amount());
 
         User initiator = userRepository.findByEmail(initiatorEmail)
@@ -170,6 +172,26 @@ public class TransferServiceImpl implements TransferService {
     private void validateAccountActive(Account account) {
         if (account.getStatus() != AccountStatus.ACTIVE) {
             throw new AccountNotActiveException(account.getId(), account.getStatus());
+        }
+    }
+
+    private void validateCurrency(Account fromAccount, Account toAccount, String requestedCurrency) {
+        if (!fromAccount.getCurrency().equals(toAccount.getCurrency())) {
+            throw new CurrencyMismatchException(
+                    "Cross-currency transfer is not supported: from="
+                            + fromAccount.getCurrency()
+                            + ", to="
+                            + toAccount.getCurrency()
+            );
+        }
+
+        if (requestedCurrency != null && !requestedCurrency.equals(fromAccount.getCurrency())) {
+            throw new CurrencyMismatchException(
+                    "Request currency does not match account currency: request="
+                            + requestedCurrency
+                            + ", account="
+                            + fromAccount.getCurrency()
+            );
         }
     }
 

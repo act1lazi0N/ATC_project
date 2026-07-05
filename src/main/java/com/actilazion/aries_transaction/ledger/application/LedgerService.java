@@ -9,6 +9,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class LedgerService {
@@ -38,7 +41,27 @@ public class LedgerService {
                 .entryType(LedgerEntryType.TRANSFER)
                 .build();
 
-        ledgerEntryRepository.save(debit);
-        ledgerEntryRepository.save(credit);
+        List<LedgerEntry> entries = List.of(debit, credit);
+        validateBalanced(entries);
+
+        ledgerEntryRepository.saveAll(entries);
+    }
+
+    private void validateBalanced(List<LedgerEntry> entries) {
+        BigDecimal totalDebit = entries.stream()
+                .filter(entry -> entry.getDirection() == LedgerDirection.DEBIT)
+                .map(LedgerEntry::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalCredit = entries.stream()
+                .filter(entry -> entry.getDirection() == LedgerDirection.CREDIT)
+                .map(LedgerEntry::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        if (totalDebit.compareTo(totalCredit) != 0) {
+            throw new IllegalStateException(
+                    "Unbalanced ledger entries: debit=" + totalDebit + ", credit=" + totalCredit
+            );
+        }
     }
 }

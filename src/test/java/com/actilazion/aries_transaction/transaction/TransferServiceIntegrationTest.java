@@ -12,6 +12,7 @@ import com.actilazion.aries_transaction.outbox.domain.OutboxEventStatus;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.exception.AccountNotActiveException;
+import com.actilazion.aries_transaction.transaction.exception.CurrencyMismatchException;
 import com.actilazion.aries_transaction.transaction.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.transaction.exception.InsufficientBalanceException;
 import com.actilazion.aries_transaction.transaction.exception.SelfTransferException;
@@ -297,6 +298,61 @@ public class TransferServiceIntegrationTest {
 
         assertThatThrownBy(() -> transferService.transfer(request, sender.getEmail()))
                 .isInstanceOf(AccountNotActiveException.class);
+    }
+
+    @Test
+    @DisplayName("Different account currencies -> CurrencyMismatchException and no money movement")
+    void transfer_differentAccountCurrencies_throwsCurrencyMismatch() {
+        receiverAccount.setCurrency("USD");
+        accountRepository.save(receiverAccount);
+        em.flush();
+        em.clear();
+
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("100000"),
+                UUID.randomUUID().toString(),
+                "VND",
+                null
+        );
+
+        assertThatThrownBy(() -> transferService.transfer(request, sender.getEmail()))
+                .isInstanceOf(CurrencyMismatchException.class);
+
+        em.clear();
+        assertThat(transactionRepository.count()).isZero();
+        assertThat(outboxEventRepository.count()).isZero();
+        assertThat(ledgerEntryRepository.count()).isZero();
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("5000000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1000000");
+    }
+
+    @Test
+    @DisplayName("Request currency different from account currency -> CurrencyMismatchException and no money movement")
+    void transfer_requestCurrencyDifferentFromAccountCurrency_throwsCurrencyMismatch() {
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("100000"),
+                UUID.randomUUID().toString(),
+                "USD",
+                null
+        );
+
+        assertThatThrownBy(() -> transferService.transfer(request, sender.getEmail()))
+                .isInstanceOf(CurrencyMismatchException.class);
+
+        em.clear();
+        assertThat(transactionRepository.count()).isZero();
+        assertThat(outboxEventRepository.count()).isZero();
+        assertThat(ledgerEntryRepository.count()).isZero();
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("5000000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1000000");
     }
 
     @Test

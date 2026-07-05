@@ -133,8 +133,7 @@ public class TransferServiceImpl implements TransferService {
         accountRepository.save(fromAccount);
         accountRepository.save(toAccount);
 
-        tx.setStatus(TransactionStatus.COMPLETED);
-        tx.setCompletedAt(OffsetDateTime.now());
+        tx.markCompleted(OffsetDateTime.now());
         transactionRepository.save(tx);
         transactionRepository.flush();
 

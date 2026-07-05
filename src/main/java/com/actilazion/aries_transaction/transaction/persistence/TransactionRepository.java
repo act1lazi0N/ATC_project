@@ -12,6 +12,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -38,5 +39,22 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     );
 
     Page<Transaction> findAllByStatus(TransactionStatus status, Pageable pageable);
+
+    @Query("""
+    SELECT t FROM Transaction t
+    WHERE t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.COMPLETED
+      AND t.currency = :currency
+      AND t.originalTransaction IS NULL
+      AND NOT EXISTS (
+          SELECT 1 FROM Transaction related
+          WHERE related.originalTransaction = t
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM SettlementItem item
+          WHERE item.transaction = t
+      )
+    ORDER BY t.completedAt ASC
+    """)
+    List<Transaction> findSettlementCandidates(@Param("currency") String currency);
 
 }

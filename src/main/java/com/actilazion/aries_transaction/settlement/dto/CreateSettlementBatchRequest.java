@@ -1,0 +1,19 @@
+package com.actilazion.aries_transaction.settlement.dto;
+
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+public record CreateSettlementBatchRequest(
+        @NotBlank(message = "currency is required")
+        @Size(min = 3, max = 3, message = "currency must be 3 characters")
+        String currency,
+
+        @NotNull(message = "feeRateBps is required")
+        @Min(value = 0, message = "feeRateBps must be non-negative")
+        @Max(value = 10000, message = "feeRateBps cannot exceed 10000")
+        Integer feeRateBps
+) {
+}

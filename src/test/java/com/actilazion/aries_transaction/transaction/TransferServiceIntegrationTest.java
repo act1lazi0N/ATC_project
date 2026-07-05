@@ -12,6 +12,7 @@ import com.actilazion.aries_transaction.ledger.domain.LedgerDirection;
 import com.actilazion.aries_transaction.ledger.domain.LedgerEntryType;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEventStatus;
 import com.actilazion.aries_transaction.identity.domain.Role;
+import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecordStatus;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.exception.AccountNotActiveException;
@@ -30,6 +31,7 @@ import com.actilazion.aries_transaction.account.persistence.AccountRepository;
 import com.actilazion.aries_transaction.audit.persistence.AuditLogRepository;
 import com.actilazion.aries_transaction.ledger.persistence.LedgerEntryRepository;
 import com.actilazion.aries_transaction.outbox.persistence.OutboxEventRepository;
+import com.actilazion.aries_transaction.transaction.persistence.IdempotencyRecordRepository;
 import com.actilazion.aries_transaction.transaction.persistence.TransactionRepository;
 import com.actilazion.aries_transaction.identity.persistence.UserRepository;
 import com.actilazion.aries_transaction.transaction.application.TransferServiceImpl;
@@ -66,6 +68,8 @@ public class TransferServiceIntegrationTest {
     OutboxEventRepository outboxEventRepository;
     @Autowired
     LedgerEntryRepository ledgerEntryRepository;
+    @Autowired
+    IdempotencyRecordRepository idempotencyRecordRepository;
     @Autowired
     UserRepository userRepository;
 
@@ -521,6 +525,9 @@ public class TransferServiceIntegrationTest {
         assertThat(transactionRepository.count()).isEqualTo(2);
         assertThat(ledgerEntryRepository.count()).isEqualTo(4);
         assertThat(outboxEventRepository.count()).isEqualTo(2);
+        assertThat(idempotencyRecordRepository.count()).isEqualTo(2);
+        assertThat(idempotencyRecordRepository.findByIdempotencyKey(sameKey).orElseThrow().getStatus())
+                .isEqualTo(IdempotencyRecordStatus.COMPLETED);
     }
 
     @Test
@@ -557,10 +564,11 @@ public class TransferServiceIntegrationTest {
                 TransactionStatus.PARTIALLY_REFUNDED
         )) {
             Transaction tx = persistTransactionWithStatus(status);
+            String idempotencyKey = UUID.randomUUID().toString();
 
             assertThatThrownBy(() -> transferService.reverse(
                     tx.getId(),
-                    new ReversalRequest(UUID.randomUUID().toString(), null),
+                    new ReversalRequest(idempotencyKey, null),
                     sender.getEmail()
             )).isInstanceOf(InvalidTransactionStateTransitionException.class);
         }
@@ -574,10 +582,11 @@ public class TransferServiceIntegrationTest {
         accountRepository.save(receiverAccount);
         em.flush();
         em.clear();
+        String idempotencyKey = UUID.randomUUID().toString();
 
         assertThatThrownBy(() -> transferService.reverse(
                 transfer.id(),
-                new ReversalRequest(UUID.randomUUID().toString(), null),
+                new ReversalRequest(idempotencyKey, null),
                 sender.getEmail()
         )).isInstanceOf(AccountNotActiveException.class);
 
@@ -594,10 +603,11 @@ public class TransferServiceIntegrationTest {
         accountRepository.save(receiverAccount);
         em.flush();
         em.clear();
+        String idempotencyKey = UUID.randomUUID().toString();
 
         assertThatThrownBy(() -> transferService.reverse(
                 transfer.id(),
-                new ReversalRequest(UUID.randomUUID().toString(), null),
+                new ReversalRequest(idempotencyKey, null),
                 sender.getEmail()
         )).isInstanceOf(InsufficientBalanceException.class);
 
@@ -689,6 +699,9 @@ public class TransferServiceIntegrationTest {
         assertThat(transactionRepository.count()).isEqualTo(2);
         assertThat(ledgerEntryRepository.count()).isEqualTo(4);
         assertThat(outboxEventRepository.count()).isEqualTo(2);
+        assertThat(idempotencyRecordRepository.count()).isEqualTo(2);
+        assertThat(idempotencyRecordRepository.findByIdempotencyKey(sameKey).orElseThrow().getStatus())
+                .isEqualTo(IdempotencyRecordStatus.COMPLETED);
         assertThat(transactionRepository.findById(transfer.id()).orElseThrow().getRefundedAmount())
                 .isEqualByComparingTo("400000");
     }
@@ -714,6 +727,9 @@ public class TransferServiceIntegrationTest {
         assertThat(transactionRepository.count()).isEqualTo(2);
         assertThat(ledgerEntryRepository.count()).isEqualTo(4);
         assertThat(outboxEventRepository.count()).isEqualTo(2);
+        assertThat(idempotencyRecordRepository.count()).isEqualTo(2);
+        assertThat(idempotencyRecordRepository.findByIdempotencyKey(sameKey).orElseThrow().getStatus())
+                .isEqualTo(IdempotencyRecordStatus.COMPLETED);
     }
 
     @Test
@@ -726,10 +742,11 @@ public class TransferServiceIntegrationTest {
                 TransactionStatus.REFUNDED
         )) {
             Transaction tx = persistTransactionWithStatus(status);
+            String idempotencyKey = UUID.randomUUID().toString();
 
             assertThatThrownBy(() -> transferService.refund(
                     tx.getId(),
-                    new RefundRequest(new BigDecimal("100000"), UUID.randomUUID().toString(), null),
+                    new RefundRequest(new BigDecimal("100000"), idempotencyKey, null),
                     sender.getEmail()
             )).isInstanceOf(InvalidTransactionStateTransitionException.class);
         }
@@ -743,10 +760,11 @@ public class TransferServiceIntegrationTest {
         accountRepository.save(receiverAccount);
         em.flush();
         em.clear();
+        String idempotencyKey = UUID.randomUUID().toString();
 
         assertThatThrownBy(() -> transferService.refund(
                 transfer.id(),
-                new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), null),
+                new RefundRequest(new BigDecimal("400000"), idempotencyKey, null),
                 sender.getEmail()
         )).isInstanceOf(AccountNotActiveException.class);
 
@@ -763,10 +781,11 @@ public class TransferServiceIntegrationTest {
         accountRepository.save(receiverAccount);
         em.flush();
         em.clear();
+        String idempotencyKey = UUID.randomUUID().toString();
 
         assertThatThrownBy(() -> transferService.refund(
                 transfer.id(),
-                new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), null),
+                new RefundRequest(new BigDecimal("400000"), idempotencyKey, null),
                 sender.getEmail()
         )).isInstanceOf(InsufficientBalanceException.class);
 

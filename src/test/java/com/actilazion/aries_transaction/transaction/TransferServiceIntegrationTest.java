@@ -12,6 +12,7 @@ import com.actilazion.aries_transaction.outbox.domain.OutboxEventStatus;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.exception.AccountNotActiveException;
+import com.actilazion.aries_transaction.transaction.exception.CurrencyMismatchException;
 import com.actilazion.aries_transaction.transaction.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.transaction.exception.InsufficientBalanceException;
 import com.actilazion.aries_transaction.transaction.exception.SelfTransferException;
@@ -33,8 +34,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -44,13 +43,10 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 @DataJpaTest
 @ActiveProfiles("test")
-@Import({TransferServiceImpl.class, AuditLogService.class, OutboxEventService.class, LedgerService.class})
+@Import({TransferServiceImpl.class, AuditLogService.class, OutboxEventService.class, LedgerService.class, IdempotencyService.class})
 public class TransferServiceIntegrationTest {
     @Autowired
     TestEntityManager em;
@@ -67,25 +63,13 @@ public class TransferServiceIntegrationTest {
     LedgerEntryRepository ledgerEntryRepository;
     @Autowired
     UserRepository userRepository;
-    @Autowired
-    IdempotencyService idempotencyService;
 
     private User sender;
     private Account senderAccount;
     private Account receiverAccount;
 
-    @TestConfiguration
-    static class TestConfig {
-        @Bean
-        IdempotencyService idempotencyService() {
-            return mock(IdempotencyService.class);
-        }
-    }
-
     @BeforeEach
     void setUp() {
-        when(idempotencyService.tryConsume(anyString())).thenReturn(true);
-
         sender = userRepository.save(User.builder()
                 .fullName("Nguyen Van A")
                 .email("sender@test.com")
@@ -300,6 +284,61 @@ public class TransferServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("Different account currencies -> CurrencyMismatchException and no money movement")
+    void transfer_differentAccountCurrencies_throwsCurrencyMismatch() {
+        receiverAccount.setCurrency("USD");
+        accountRepository.save(receiverAccount);
+        em.flush();
+        em.clear();
+
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("100000"),
+                UUID.randomUUID().toString(),
+                "VND",
+                null
+        );
+
+        assertThatThrownBy(() -> transferService.transfer(request, sender.getEmail()))
+                .isInstanceOf(CurrencyMismatchException.class);
+
+        em.clear();
+        assertThat(transactionRepository.count()).isZero();
+        assertThat(outboxEventRepository.count()).isZero();
+        assertThat(ledgerEntryRepository.count()).isZero();
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("5000000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1000000");
+    }
+
+    @Test
+    @DisplayName("Request currency different from account currency -> CurrencyMismatchException and no money movement")
+    void transfer_requestCurrencyDifferentFromAccountCurrency_throwsCurrencyMismatch() {
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("100000"),
+                UUID.randomUUID().toString(),
+                "USD",
+                null
+        );
+
+        assertThatThrownBy(() -> transferService.transfer(request, sender.getEmail()))
+                .isInstanceOf(CurrencyMismatchException.class);
+
+        em.clear();
+        assertThat(transactionRepository.count()).isZero();
+        assertThat(outboxEventRepository.count()).isZero();
+        assertThat(ledgerEntryRepository.count()).isZero();
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("5000000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1000000");
+    }
+
+    @Test
     @DisplayName("Self transfer -> SelfTransferException")
     void transfer_selfTransfer_throwsException() {
         var request = new TransferRequest(
@@ -319,9 +358,6 @@ public class TransferServiceIntegrationTest {
     @DisplayName("Duplicated Idempotency key with same request -> returns original response")
     void transfer_duplicateIdempotencyKey_returnsOriginalResponse() {
         String sameKey = UUID.randomUUID().toString();
-        when(idempotencyService.tryConsume(sameKey))
-                .thenReturn(true)
-                .thenReturn(false);
 
         var request = new TransferRequest(
                 senderAccount.getId().toString(),

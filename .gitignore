@@ -64,3 +64,4 @@ AGENTS.md
 .codex/
 .maven/
 .agents
+skills-lock.json

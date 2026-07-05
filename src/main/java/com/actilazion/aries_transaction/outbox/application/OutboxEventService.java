@@ -20,16 +20,32 @@ import java.util.UUID;
 public class OutboxEventService {
     public static final String AGGREGATE_TYPE_TRANSACTION = "Transaction";
     public static final String EVENT_TYPE_TRANSFER_COMPLETED = "TransferCompleted";
+    public static final String EVENT_TYPE_REVERSAL_COMPLETED = "ReversalCompleted";
+    public static final String EVENT_TYPE_REFUND_COMPLETED = "RefundCompleted";
 
     private final OutboxEventRepository outboxEventRepository;
 
     @Transactional
     public void recordTransferCompleted(Transaction tx) {
+        recordTransactionCompleted(tx, EVENT_TYPE_TRANSFER_COMPLETED);
+    }
+
+    @Transactional
+    public void recordReversalCompleted(Transaction tx) {
+        recordTransactionCompleted(tx, EVENT_TYPE_REVERSAL_COMPLETED);
+    }
+
+    @Transactional
+    public void recordRefundCompleted(Transaction tx) {
+        recordTransactionCompleted(tx, EVENT_TYPE_REFUND_COMPLETED);
+    }
+
+    private void recordTransactionCompleted(Transaction tx, String eventType) {
         boolean alreadyRecorded = outboxEventRepository
                 .findByAggregateTypeAndAggregateIdAndEventType(
                         AGGREGATE_TYPE_TRANSACTION,
                         tx.getId(),
-                        EVENT_TYPE_TRANSFER_COMPLETED
+                        eventType
                 )
                 .isPresent();
         if (alreadyRecorded) {
@@ -39,7 +55,7 @@ public class OutboxEventService {
         OutboxEvent event = OutboxEvent.builder()
                 .aggregateType(AGGREGATE_TYPE_TRANSACTION)
                 .aggregateId(tx.getId())
-                .eventType(EVENT_TYPE_TRANSFER_COMPLETED)
+                .eventType(eventType)
                 .payload(toPayload(tx))
                 .status(OutboxEventStatus.PENDING)
                 .build();
@@ -88,6 +104,8 @@ public class OutboxEventService {
         payload.put("currency", tx.getCurrency());
         payload.put("status", tx.getStatus().name());
         payload.put("description", tx.getDescription());
+        payload.put("originalTransactionId", tx.getOriginalTransaction() != null ? tx.getOriginalTransaction().getId().toString() : null);
+        payload.put("refundedAmount", tx.getRefundedAmount() != null ? tx.getRefundedAmount().toPlainString() : null);
         payload.put("createdAt", tx.getCreatedAt() != null ? tx.getCreatedAt().toString() : null);
         payload.put("completedAt", tx.getCompletedAt() != null ? tx.getCompletedAt().toString() : null);
 

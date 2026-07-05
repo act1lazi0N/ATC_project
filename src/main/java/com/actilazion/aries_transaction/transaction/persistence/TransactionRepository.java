@@ -2,9 +2,11 @@ package com.actilazion.aries_transaction.transaction.persistence;
 
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -18,6 +20,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     // Check idempotency key before processing
     Optional<Transaction> findByIdempotencyKey(String idempotencyKey);
     boolean existsByIdempotencyKey(String idempotencyKey);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT t FROM Transaction t WHERE t.id = :id")
+    Optional<Transaction> findByIdWithLock(@Param("id") UUID id);
 
     // Find all transactions by account id, arranged in ascending order of creation date
     @Query("""

@@ -1,6 +1,8 @@
 package com.actilazion.aries_transaction.transaction;
 
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
+import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
+import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.ledger.domain.LedgerEntry;
 import com.actilazion.aries_transaction.identity.domain.User;
@@ -15,6 +17,8 @@ import com.actilazion.aries_transaction.transaction.exception.AccountNotActiveEx
 import com.actilazion.aries_transaction.transaction.exception.CurrencyMismatchException;
 import com.actilazion.aries_transaction.transaction.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.transaction.exception.InsufficientBalanceException;
+import com.actilazion.aries_transaction.transaction.exception.InvalidTransactionStateTransitionException;
+import com.actilazion.aries_transaction.transaction.exception.RefundAmountExceededException;
 import com.actilazion.aries_transaction.transaction.exception.SelfTransferException;
 import com.actilazion.aries_transaction.audit.application.AuditLogService;
 import com.actilazion.aries_transaction.ledger.application.LedgerService;
@@ -440,6 +444,146 @@ public class TransferServiceIntegrationTest {
         em.clear();
         assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
                 .isEqualByComparingTo("0");
+    }
+
+    @Test
+    @DisplayName("Reverse completed transfer: creates compensating transaction and reversal ledger")
+    void reverse_completedTransfer_success() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        var reversal = transferService.reverse(
+                transfer.id(),
+                new ReversalRequest(UUID.randomUUID().toString(), "Reverse mistaken transfer"),
+                sender.getEmail()
+        );
+
+        em.flush();
+        em.clear();
+
+        var original = transactionRepository.findById(transfer.id()).orElseThrow();
+        assertThat(original.getStatus()).isEqualTo(TransactionStatus.REVERSED);
+
+        var reversalTx = transactionRepository.findById(reversal.id()).orElseThrow();
+        assertThat(reversalTx.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(reversalTx.getOriginalTransaction().getId()).isEqualTo(transfer.id());
+        assertThat(reversalTx.getFromAccount().getId()).isEqualTo(receiverAccount.getId());
+        assertThat(reversalTx.getToAccount().getId()).isEqualTo(senderAccount.getId());
+        assertThat(reversalTx.getAmount()).isEqualByComparingTo("1000000");
+
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("5000000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1000000");
+
+        List<LedgerEntry> reversalEntries = ledgerEntryRepository.findAllByTransactionId(reversal.id());
+        assertThat(reversalEntries).hasSize(2);
+        assertThat(reversalEntries).allSatisfy(entry -> assertThat(entry.getEntryType()).isEqualTo(LedgerEntryType.REVERSAL));
+        assertThat(reversalEntries.stream().filter(entry -> entry.getDirection() == LedgerDirection.DEBIT).findFirst().orElseThrow().getAccount().getId())
+                .isEqualTo(receiverAccount.getId());
+        assertThat(reversalEntries.stream().filter(entry -> entry.getDirection() == LedgerDirection.CREDIT).findFirst().orElseThrow().getAccount().getId())
+                .isEqualTo(senderAccount.getId());
+        assertThat(outboxEventRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Double reversal is rejected")
+    void reverse_alreadyReversed_throwsInvalidState() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        transferService.reverse(
+                transfer.id(),
+                new ReversalRequest(UUID.randomUUID().toString(), null),
+                sender.getEmail()
+        );
+
+        assertThatThrownBy(() -> transferService.reverse(
+                transfer.id(),
+                new ReversalRequest(UUID.randomUUID().toString(), null),
+                sender.getEmail()
+        )).isInstanceOf(InvalidTransactionStateTransitionException.class);
+
+        assertThat(transactionRepository.count()).isEqualTo(2);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(4);
+        assertThat(outboxEventRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Partial then full refund updates original status and creates refund ledger")
+    void refund_partialThenFull_success() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        var partialRefund = transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), "Partial refund"),
+                sender.getEmail()
+        );
+
+        em.flush();
+        em.clear();
+
+        var partiallyRefunded = transactionRepository.findById(transfer.id()).orElseThrow();
+        assertThat(partiallyRefunded.getStatus()).isEqualTo(TransactionStatus.PARTIALLY_REFUNDED);
+        assertThat(partiallyRefunded.getRefundedAmount()).isEqualByComparingTo("400000");
+        assertThat(partialRefund.originalTransactionId()).isEqualTo(transfer.id());
+
+        List<LedgerEntry> partialEntries = ledgerEntryRepository.findAllByTransactionId(partialRefund.id());
+        assertThat(partialEntries).hasSize(2);
+        assertThat(partialEntries).allSatisfy(entry -> assertThat(entry.getEntryType()).isEqualTo(LedgerEntryType.REFUND));
+
+        var fullRefund = transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("600000"), UUID.randomUUID().toString(), "Remaining refund"),
+                sender.getEmail()
+        );
+
+        em.flush();
+        em.clear();
+
+        var refunded = transactionRepository.findById(transfer.id()).orElseThrow();
+        assertThat(refunded.getStatus()).isEqualTo(TransactionStatus.REFUNDED);
+        assertThat(refunded.getRefundedAmount()).isEqualByComparingTo("1000000");
+        assertThat(fullRefund.originalTransactionId()).isEqualTo(transfer.id());
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("5000000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1000000");
+        assertThat(transactionRepository.count()).isEqualTo(3);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(6);
+        assertThat(outboxEventRepository.count()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("Refund amount greater than remaining amount is rejected")
+    void refund_amountGreaterThanRemaining_throwsException() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), null),
+                sender.getEmail()
+        );
+
+        assertThatThrownBy(() -> transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("700000"), UUID.randomUUID().toString(), null),
+                sender.getEmail()
+        )).isInstanceOf(RefundAmountExceededException.class);
+
+        var original = transactionRepository.findById(transfer.id()).orElseThrow();
+        assertThat(original.getStatus()).isEqualTo(TransactionStatus.PARTIALLY_REFUNDED);
+        assertThat(original.getRefundedAmount()).isEqualByComparingTo("400000");
+        assertThat(transactionRepository.count()).isEqualTo(2);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(4);
+        assertThat(outboxEventRepository.count()).isEqualTo(2);
+    }
+
+    private TransferRequest transferRequest(String amount) {
+        return new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal(amount),
+                UUID.randomUUID().toString(),
+                "VND",
+                null
+        );
     }
 
 }

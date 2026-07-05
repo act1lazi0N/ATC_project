@@ -1,6 +1,8 @@
 package com.actilazion.aries_transaction.transaction.application;
 
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
+import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
+import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
@@ -16,6 +18,8 @@ import com.actilazion.aries_transaction.transaction.exception.DuplicateTransferE
 import com.actilazion.aries_transaction.transaction.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.transaction.exception.InsufficientBalanceException;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
+import com.actilazion.aries_transaction.transaction.exception.InvalidTransactionStateTransitionException;
+import com.actilazion.aries_transaction.transaction.exception.RefundAmountExceededException;
 import com.actilazion.aries_transaction.transaction.exception.SelfTransferException;
 import com.actilazion.aries_transaction.account.persistence.AccountRepository;
 import com.actilazion.aries_transaction.transaction.persistence.TransactionRepository;
@@ -63,8 +67,70 @@ public class TransferServiceImpl implements TransferService {
         return response;
     }
 
+    @Override
+    @Transactional
+    public TransactionResponse reverse(UUID originalTransactionId, ReversalRequest request, String initiatorEmail) {
+        Transaction original = lockTransaction(originalTransactionId);
+        var existing = idempotencyService.findByKey(request.idempotencyKey());
+        if (existing.isPresent()) {
+            return responseForIdempotentRetry(existing.get(), request, original);
+        }
+
+        IdempotencyRecord record = idempotencyService.createProcessingRecord(request, original);
+        TransactionResponse response = doReverse(original, request, initiatorEmail);
+        Transaction tx = transactionRepository.getReferenceById(response.id());
+        idempotencyService.markCompleted(record, tx, response);
+        return response;
+    }
+
+    @Override
+    @Transactional
+    public TransactionResponse refund(UUID originalTransactionId, RefundRequest request, String initiatorEmail) {
+        Transaction original = lockTransaction(originalTransactionId);
+        var existing = idempotencyService.findByKey(request.idempotencyKey());
+        if (existing.isPresent()) {
+            return responseForIdempotentRetry(existing.get(), request, original);
+        }
+
+        IdempotencyRecord record = idempotencyService.createProcessingRecord(request, original);
+        TransactionResponse response = doRefund(original, request, initiatorEmail);
+        Transaction tx = transactionRepository.getReferenceById(response.id());
+        idempotencyService.markCompleted(record, tx, response);
+        return response;
+    }
+
     private TransactionResponse responseForIdempotentRetry(IdempotencyRecord record, TransferRequest request) {
         if (!idempotencyService.matchesRequest(record, request)) {
+            throw new IdempotencyConflictException(request.idempotencyKey());
+        }
+
+        if (record.getStatus() == IdempotencyRecordStatus.COMPLETED && record.getTransaction() != null) {
+            return TransactionResponse.from(record.getTransaction());
+        }
+        throw new DuplicateTransferException(request.idempotencyKey());
+    }
+
+    private TransactionResponse responseForIdempotentRetry(
+            IdempotencyRecord record,
+            ReversalRequest request,
+            Transaction original
+    ) {
+        if (!idempotencyService.matchesRequest(record, request, original)) {
+            throw new IdempotencyConflictException(request.idempotencyKey());
+        }
+
+        if (record.getStatus() == IdempotencyRecordStatus.COMPLETED && record.getTransaction() != null) {
+            return TransactionResponse.from(record.getTransaction());
+        }
+        throw new DuplicateTransferException(request.idempotencyKey());
+    }
+
+    private TransactionResponse responseForIdempotentRetry(
+            IdempotencyRecord record,
+            RefundRequest request,
+            Transaction original
+    ) {
+        if (!idempotencyService.matchesRequest(record, request, original)) {
             throw new IdempotencyConflictException(request.idempotencyKey());
         }
 
@@ -132,6 +198,141 @@ public class TransferServiceImpl implements TransferService {
         return TransactionResponse.from(tx);
     }
 
+    private TransactionResponse doReverse(Transaction original, ReversalRequest request, String initiatorEmail) {
+        if (original.getStatus() != TransactionStatus.COMPLETED) {
+            throw new InvalidTransactionStateTransitionException(original.getStatus(), TransactionStatus.REVERSED);
+        }
+
+        Account fromAccount = original.getToAccount();
+        Account toAccount = original.getFromAccount();
+        Account lockedFromAccount;
+        Account lockedToAccount;
+        if (fromAccount.getId().compareTo(toAccount.getId()) < 0) {
+            lockedFromAccount = lockAccount(fromAccount.getId());
+            lockedToAccount = lockAccount(toAccount.getId());
+        } else {
+            lockedToAccount = lockAccount(toAccount.getId());
+            lockedFromAccount = lockAccount(fromAccount.getId());
+        }
+
+        Transaction tx = createCompensatingTransaction(
+                original,
+                lockedFromAccount,
+                lockedToAccount,
+                original.getAmount(),
+                request.idempotencyKey(),
+                request.description(),
+                initiatorEmail
+        );
+
+        moveBalance(lockedFromAccount, lockedToAccount, original.getAmount());
+        original.markReversed();
+        transactionRepository.save(original);
+        tx.markCompleted(OffsetDateTime.now());
+        transactionRepository.save(tx);
+        transactionRepository.flush();
+
+        ledgerService.recordReversal(tx);
+        outboxEventService.recordReversalCompleted(tx);
+        auditLogService.log(original, AuditEventType.TRANSFER_REVERSED, initiatorEmail);
+        auditLogService.log(tx, AuditEventType.TRANSFER_COMPLETED, initiatorEmail);
+
+        return TransactionResponse.from(tx);
+    }
+
+    private TransactionResponse doRefund(Transaction original, RefundRequest request, String initiatorEmail) {
+        if (original.getStatus() != TransactionStatus.COMPLETED
+                && original.getStatus() != TransactionStatus.PARTIALLY_REFUNDED) {
+            throw new InvalidTransactionStateTransitionException(original.getStatus(), TransactionStatus.REFUNDED);
+        }
+
+        BigDecimal alreadyRefunded = original.getRefundedAmount() != null
+                ? original.getRefundedAmount()
+                : BigDecimal.ZERO;
+        BigDecimal remaining = original.getAmount().subtract(alreadyRefunded);
+        if (request.amount().compareTo(remaining) > 0) {
+            throw new RefundAmountExceededException(request.amount(), remaining);
+        }
+
+        Account fromAccount = original.getToAccount();
+        Account toAccount = original.getFromAccount();
+        Account lockedFromAccount;
+        Account lockedToAccount;
+        if (fromAccount.getId().compareTo(toAccount.getId()) < 0) {
+            lockedFromAccount = lockAccount(fromAccount.getId());
+            lockedToAccount = lockAccount(toAccount.getId());
+        } else {
+            lockedToAccount = lockAccount(toAccount.getId());
+            lockedFromAccount = lockAccount(fromAccount.getId());
+        }
+
+        Transaction tx = createCompensatingTransaction(
+                original,
+                lockedFromAccount,
+                lockedToAccount,
+                request.amount(),
+                request.idempotencyKey(),
+                request.description(),
+                initiatorEmail
+        );
+
+        moveBalance(lockedFromAccount, lockedToAccount, request.amount());
+        BigDecimal refundedAmount = alreadyRefunded.add(request.amount());
+        original.setRefundedAmount(refundedAmount);
+        if (refundedAmount.compareTo(original.getAmount()) == 0) {
+            original.markRefunded();
+        } else {
+            original.markPartiallyRefunded();
+        }
+        transactionRepository.save(original);
+        tx.markCompleted(OffsetDateTime.now());
+        transactionRepository.save(tx);
+        transactionRepository.flush();
+
+        ledgerService.recordRefund(tx);
+        outboxEventService.recordRefundCompleted(tx);
+        auditLogService.log(original, AuditEventType.TRANSFER_REFUNDED, initiatorEmail);
+        auditLogService.log(tx, AuditEventType.TRANSFER_COMPLETED, initiatorEmail);
+
+        return TransactionResponse.from(tx);
+    }
+
+    private Transaction createCompensatingTransaction(
+            Transaction original,
+            Account fromAccount,
+            Account toAccount,
+            BigDecimal amount,
+            String idempotencyKey,
+            String description,
+            String initiatorEmail
+    ) {
+        validateAccountActive(fromAccount);
+        validateAccountActive(toAccount);
+        validateSufficientBalance(fromAccount, amount);
+
+        User initiator = userRepository.findByEmail(initiatorEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User", initiatorEmail));
+
+        return Transaction.builder()
+                .fromAccount(fromAccount)
+                .toAccount(toAccount)
+                .initiatedBy(initiator)
+                .amount(amount)
+                .currency(original.getCurrency())
+                .idempotencyKey(idempotencyKey)
+                .description(description)
+                .originalTransaction(original)
+                .status(TransactionStatus.PENDING)
+                .build();
+    }
+
+    private void moveBalance(Account fromAccount, Account toAccount, BigDecimal amount) {
+        fromAccount.setBalance(fromAccount.getBalance().subtract(amount));
+        toAccount.setBalance(toAccount.getBalance().add(amount));
+        accountRepository.save(fromAccount);
+        accountRepository.save(toAccount);
+    }
+
     @Override
     @Transactional(readOnly = true)
     public TransactionResponse getById(UUID txId) {
@@ -151,6 +352,11 @@ public class TransferServiceImpl implements TransferService {
     private Account lockAccount(UUID accountId) {
         return accountRepository.findByIdWithLock(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
+    }
+
+    private Transaction lockTransaction(UUID transactionId) {
+        return transactionRepository.findByIdWithLock(transactionId)
+                .orElseThrow(() -> new ResourceNotFoundException("Transaction", transactionId));
     }
 
     private void validateAccountActive(Account account) {

@@ -110,9 +110,9 @@ class SettlementServiceIntegrationTest {
                 .role(Role.ADMIN)
                 .build());
 
-        accountRepository.save(systemAccount(system, "CLEARING-VND"));
-        accountRepository.save(systemAccount(system, "PAYABLE-VND"));
-        accountRepository.save(systemAccount(system, "REVENUE-VND"));
+        accountRepository.save(systemAccount(system, "CLEARING-VND", AccountType.CLEARING));
+        accountRepository.save(systemAccount(system, "PAYABLE-VND", AccountType.RECEIVER_PAYABLE));
+        accountRepository.save(systemAccount(system, "REVENUE-VND", AccountType.PLATFORM_REVENUE));
 
         em.flush();
         em.clear();
@@ -127,7 +127,7 @@ class SettlementServiceIntegrationTest {
 
         var batch = settlementService.createBatch("VND", 200, "settle-key-1", cutoff);
 
-        assertThat(batch.status()).isEqualTo(SettlementBatchStatus.OPEN);
+        assertThat(batch.status()).isEqualTo(SettlementBatchStatus.PENDING);
         assertThat(batch.currency()).isEqualTo("VND");
         assertThat(batch.idempotencyKey()).isEqualTo("settle-key-1");
         assertThat(batch.cutoffCompletedAt()).isEqualTo(cutoff);
@@ -250,11 +250,11 @@ class SettlementServiceIntegrationTest {
         );
     }
 
-    private Account systemAccount(User user, String accountNumber) {
+    private Account systemAccount(User user, String accountNumber, AccountType accountType) {
         return Account.builder()
                 .user(user)
                 .accountNumber(accountNumber)
-                .accountType(AccountType.BUSINESS)
+                .accountType(accountType)
                 .balance(BigDecimal.ZERO)
                 .currency("VND")
                 .status(AccountStatus.ACTIVE)

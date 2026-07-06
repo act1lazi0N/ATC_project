@@ -69,7 +69,7 @@ public class SettlementServiceImpl implements SettlementService {
                 .feeRateBps(feeRateBps)
                 .idempotencyKey(idempotencyKey)
                 .cutoffCompletedAt(cutoffCompletedAt)
-                .status(SettlementBatchStatus.OPEN)
+                .status(SettlementBatchStatus.PENDING)
                 .build();
 
         BigDecimal grossTotal = BigDecimal.ZERO;

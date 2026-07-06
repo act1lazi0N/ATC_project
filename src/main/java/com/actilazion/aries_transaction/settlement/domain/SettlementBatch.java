@@ -61,7 +61,7 @@ public class SettlementBatch {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default
-    private SettlementBatchStatus status = SettlementBatchStatus.OPEN;
+    private SettlementBatchStatus status = SettlementBatchStatus.PENDING;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

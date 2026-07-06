@@ -3,6 +3,8 @@ package com.actilazion.aries_transaction.account.application;
 import com.actilazion.aries_transaction.account.dto.CreateAccountRequest;
 import com.actilazion.aries_transaction.account.dto.AccountResponse;
 import com.actilazion.aries_transaction.account.domain.Account;
+import com.actilazion.aries_transaction.account.domain.AccountType;
+import com.actilazion.aries_transaction.account.exception.InternalAccountTypeException;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.account.domain.AccountStatus;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
@@ -29,6 +31,7 @@ public class AccountServiceImpl implements AccountService {
     @Override
     @Transactional
     public AccountResponse create(CreateAccountRequest request, String ownerEmail) {
+        validatePublicAccountType(request.accountType());
         User owner = userRepository.findByEmail(ownerEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User", ownerEmail));
         Account account = Account.builder()
@@ -43,6 +46,14 @@ public class AccountServiceImpl implements AccountService {
         Account saved = accountRepository.save(account);
         log.info("[ACCOUNT] Created accountId={} owner={}", saved.getId(), ownerEmail);
         return AccountResponse.from(saved);
+    }
+
+    private void validatePublicAccountType(AccountType accountType) {
+        if (accountType == AccountType.CLEARING
+                || accountType == AccountType.RECEIVER_PAYABLE
+                || accountType == AccountType.PLATFORM_REVENUE) {
+            throw new InternalAccountTypeException(accountType);
+        }
     }
 
     @Override

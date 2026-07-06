@@ -1,9 +1,7 @@
 package com.actilazion.aries_transaction.settlement.domain;
 
-public enum SettlementBatchStatus {
-    PENDING,
+public enum PayoutAttemptStatus {
     PROCESSING,
     PAID,
-    FAILED,
-    CANCELLED
+    FAILED
 }

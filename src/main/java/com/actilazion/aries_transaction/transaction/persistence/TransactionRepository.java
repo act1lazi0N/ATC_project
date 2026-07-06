@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 import java.util.List;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Repository
@@ -37,6 +38,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     SELECT t FROM Transaction t
     WHERE t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.COMPLETED
       AND t.currency = :currency
+      AND t.completedAt <= :cutoffCompletedAt
       AND t.originalTransaction IS NULL
       AND NOT EXISTS (
           SELECT 1 FROM Transaction related
@@ -48,6 +50,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       )
     ORDER BY t.completedAt ASC
     """)
-    List<Transaction> findSettlementCandidates(@Param("currency") String currency);
+    List<Transaction> findSettlementCandidates(
+            @Param("currency") String currency,
+            @Param("cutoffCompletedAt") OffsetDateTime cutoffCompletedAt
+    );
 
 }

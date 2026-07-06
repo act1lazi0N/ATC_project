@@ -15,6 +15,8 @@ public record SettlementBatchResponse(
         BigDecimal feeAmount,
         BigDecimal netAmount,
         Integer feeRateBps,
+        String idempotencyKey,
+        OffsetDateTime cutoffCompletedAt,
         SettlementBatchStatus status,
         OffsetDateTime createdAt,
         List<SettlementItemResponse> items
@@ -27,6 +29,8 @@ public record SettlementBatchResponse(
                 batch.getFeeAmount(),
                 batch.getNetAmount(),
                 batch.getFeeRateBps(),
+                batch.getIdempotencyKey(),
+                batch.getCutoffCompletedAt(),
                 batch.getStatus(),
                 batch.getCreatedAt(),
                 batch.getItems().stream().map(SettlementItemResponse::from).toList()

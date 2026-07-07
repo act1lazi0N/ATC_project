@@ -1,6 +1,6 @@
 package com.actilazion.aries_transaction.transaction.domain;
 
-import com.actilazion.aries_transaction.transaction.exception.InvalidTransactionStateTransitionException;
+import com.actilazion.aries_transaction.transaction.domain.exception.InvalidTransactionStateTransitionException;
 
 import java.util.Objects;
 

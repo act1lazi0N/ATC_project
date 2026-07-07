@@ -5,7 +5,7 @@ import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.ledger.domain.LedgerDirection;
 import com.actilazion.aries_transaction.ledger.domain.LedgerEntryType;
-import com.actilazion.aries_transaction.ledger.persistence.LedgerEntryRepository;
+import com.actilazion.aries_transaction.ledger.infrastructure.LedgerEntryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

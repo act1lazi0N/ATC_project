@@ -1,7 +1,7 @@
 package com.actilazion.aries_transaction.settlement.application;
 
 import com.actilazion.aries_transaction.account.domain.Account;
-import com.actilazion.aries_transaction.account.persistence.AccountRepository;
+import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
 import com.actilazion.aries_transaction.ledger.application.LedgerService;
 import com.actilazion.aries_transaction.settlement.domain.PayoutStatus;
@@ -9,11 +9,11 @@ import com.actilazion.aries_transaction.settlement.domain.SettlementBatch;
 import com.actilazion.aries_transaction.settlement.domain.SettlementBatchStatus;
 import com.actilazion.aries_transaction.settlement.domain.SettlementItem;
 import com.actilazion.aries_transaction.settlement.dto.SettlementBatchResponse;
-import com.actilazion.aries_transaction.settlement.exception.NoSettlementCandidateException;
-import com.actilazion.aries_transaction.settlement.exception.SettlementIdempotencyConflictException;
-import com.actilazion.aries_transaction.settlement.persistence.SettlementBatchRepository;
+import com.actilazion.aries_transaction.settlement.domain.exception.NoSettlementCandidateException;
+import com.actilazion.aries_transaction.settlement.domain.exception.SettlementIdempotencyConflictException;
+import com.actilazion.aries_transaction.settlement.infrastructure.SettlementBatchRepository;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
-import com.actilazion.aries_transaction.transaction.persistence.TransactionRepository;
+import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

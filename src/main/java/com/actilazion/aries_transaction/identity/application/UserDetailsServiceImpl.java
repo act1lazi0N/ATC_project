@@ -1,6 +1,6 @@
 package com.actilazion.aries_transaction.identity.application;
 
-import com.actilazion.aries_transaction.identity.persistence.UserRepository;
+import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;

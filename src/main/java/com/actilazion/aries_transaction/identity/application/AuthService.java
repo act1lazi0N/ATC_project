@@ -7,7 +7,7 @@ import com.actilazion.aries_transaction.identity.dto.AuthResponse;
 import com.actilazion.aries_transaction.identity.dto.UserResponse;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.common.exception.AppException;
-import com.actilazion.aries_transaction.identity.persistence.UserRepository;
+import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import io.swagger.v3.oas.annotations.servers.Server;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

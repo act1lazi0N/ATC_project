@@ -2,7 +2,7 @@ package com.actilazion.aries_transaction.transaction;
 
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
-import com.actilazion.aries_transaction.transaction.exception.InvalidTransactionStateTransitionException;
+import com.actilazion.aries_transaction.transaction.domain.exception.InvalidTransactionStateTransitionException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 

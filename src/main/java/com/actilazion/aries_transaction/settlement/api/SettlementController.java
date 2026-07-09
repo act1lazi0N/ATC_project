@@ -32,7 +32,12 @@ public class SettlementController {
     public ResponseEntity<ApiResponse<SettlementBatchResponse>> createBatch(
             @Valid @RequestBody CreateSettlementBatchRequest request
     ) {
-        SettlementBatchResponse response = settlementService.createBatch(request.currency(), request.feeRateBps());
+        SettlementBatchResponse response = settlementService.createBatch(
+                request.currency(),
+                request.feeRateBps(),
+                request.idempotencyKey(),
+                request.cutoffCompletedAt()
+        );
         return ResponseEntity.ok(ApiResponse.ok("Settlement batch created", response));
     }
 

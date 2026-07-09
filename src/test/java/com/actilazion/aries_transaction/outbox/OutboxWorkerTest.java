@@ -3,9 +3,9 @@ package com.actilazion.aries_transaction.outbox;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEvent;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEventStatus;
 import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
-import com.actilazion.aries_transaction.outbox.worker.NoopOutboxEventPublisher;
-import com.actilazion.aries_transaction.outbox.worker.OutboxEventPublisher;
-import com.actilazion.aries_transaction.outbox.worker.OutboxWorker;
+import com.actilazion.aries_transaction.outbox.infrastructure.worker.NoopOutboxEventPublisher;
+import com.actilazion.aries_transaction.outbox.infrastructure.worker.OutboxEventPublisher;
+import com.actilazion.aries_transaction.outbox.infrastructure.worker.OutboxWorker;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 

@@ -7,8 +7,10 @@ import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
 import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
-import com.actilazion.aries_transaction.transaction.persistence.IdempotencyRecordRepository;
+import com.actilazion.aries_transaction.transaction.domain.exception.DuplicateTransferException;
+import com.actilazion.aries_transaction.transaction.infrastructure.IdempotencyRecordRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -46,7 +48,11 @@ public class IdempotencyService {
                 .requestHash(requestHash)
                 .status(IdempotencyRecordStatus.PROCESSING)
                 .build();
-        return idempotencyRecordRepository.saveAndFlush(record);
+        try {
+            return idempotencyRecordRepository.saveAndFlush(record);
+        } catch (DataIntegrityViolationException ex) {
+            throw new DuplicateTransferException(idempotencyKey);
+        }
     }
 
     public void markCompleted(IdempotencyRecord record, Transaction transaction, TransactionResponse response) {

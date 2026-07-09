@@ -4,5 +4,6 @@ public enum LedgerEntryType {
     TRANSFER,
     REVERSAL,
     REFUND,
+    SETTLEMENT,
     ADJUSTMENT
 }

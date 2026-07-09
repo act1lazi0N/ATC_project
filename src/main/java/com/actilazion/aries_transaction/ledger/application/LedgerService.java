@@ -1,10 +1,11 @@
 package com.actilazion.aries_transaction.ledger.application;
 
 import com.actilazion.aries_transaction.ledger.domain.LedgerEntry;
+import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.ledger.domain.LedgerDirection;
 import com.actilazion.aries_transaction.ledger.domain.LedgerEntryType;
-import com.actilazion.aries_transaction.ledger.persistence.LedgerEntryRepository;
+import com.actilazion.aries_transaction.ledger.infrastructure.LedgerEntryRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,33 +33,71 @@ public class LedgerService {
         recordPairedEntries(tx, LedgerEntryType.REFUND);
     }
 
+    @Transactional
+    public void recordSettlement(
+            Transaction tx,
+            Account clearingAccount,
+            Account receiverPayableAccount,
+            Account platformRevenueAccount,
+            BigDecimal grossAmount,
+            BigDecimal receiverPayable,
+            BigDecimal platformRevenue
+    ) {
+        if (ledgerEntryRepository.countByTransactionIdAndEntryType(tx.getId(), LedgerEntryType.SETTLEMENT) > 0) {
+            return;
+        }
+
+        List<LedgerEntry> entries = new java.util.ArrayList<>();
+        entries.add(buildEntry(tx, clearingAccount, LedgerDirection.DEBIT, grossAmount, LedgerEntryType.SETTLEMENT));
+        addPositiveEntry(entries, tx, receiverPayableAccount, LedgerDirection.CREDIT, receiverPayable);
+        addPositiveEntry(entries, tx, platformRevenueAccount, LedgerDirection.CREDIT, platformRevenue);
+
+        validateBalanced(entries);
+        ledgerEntryRepository.saveAll(entries);
+    }
+
     private void recordPairedEntries(Transaction tx, LedgerEntryType entryType) {
         if (ledgerEntryRepository.countByTransactionId(tx.getId()) > 0) {
             return;
         }
 
-        LedgerEntry debit = LedgerEntry.builder()
-                .transaction(tx)
-                .account(tx.getFromAccount())
-                .direction(LedgerDirection.DEBIT)
-                .amount(tx.getAmount())
-                .currency(tx.getCurrency())
-                .entryType(entryType)
-                .build();
+        LedgerEntry debit = buildEntry(tx, tx.getFromAccount(), LedgerDirection.DEBIT, tx.getAmount(), entryType);
 
-        LedgerEntry credit = LedgerEntry.builder()
-                .transaction(tx)
-                .account(tx.getToAccount())
-                .direction(LedgerDirection.CREDIT)
-                .amount(tx.getAmount())
-                .currency(tx.getCurrency())
-                .entryType(entryType)
-                .build();
+        LedgerEntry credit = buildEntry(tx, tx.getToAccount(), LedgerDirection.CREDIT, tx.getAmount(), entryType);
 
         List<LedgerEntry> entries = List.of(debit, credit);
         validateBalanced(entries);
 
         ledgerEntryRepository.saveAll(entries);
+    }
+
+    private void addPositiveEntry(
+            List<LedgerEntry> entries,
+            Transaction tx,
+            Account account,
+            LedgerDirection direction,
+            BigDecimal amount
+    ) {
+        if (amount.compareTo(BigDecimal.ZERO) > 0) {
+            entries.add(buildEntry(tx, account, direction, amount, LedgerEntryType.SETTLEMENT));
+        }
+    }
+
+    private LedgerEntry buildEntry(
+            Transaction tx,
+            Account account,
+            LedgerDirection direction,
+            BigDecimal amount,
+            LedgerEntryType entryType
+    ) {
+        return LedgerEntry.builder()
+                .transaction(tx)
+                .account(account)
+                .direction(direction)
+                .amount(amount)
+                .currency(tx.getCurrency())
+                .entryType(entryType)
+                .build();
     }
 
     private void validateBalanced(List<LedgerEntry> entries) {

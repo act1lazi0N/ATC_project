@@ -52,10 +52,16 @@ public class SettlementBatch {
     @Column(name = "fee_rate_bps", nullable = false)
     private int feeRateBps;
 
+    @Column(name = "idempotency_key", nullable = false, unique = true, length = 64)
+    private String idempotencyKey;
+
+    @Column(name = "cutoff_completed_at", nullable = false)
+    private OffsetDateTime cutoffCompletedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default
-    private SettlementBatchStatus status = SettlementBatchStatus.OPEN;
+    private SettlementBatchStatus status = SettlementBatchStatus.PENDING;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)

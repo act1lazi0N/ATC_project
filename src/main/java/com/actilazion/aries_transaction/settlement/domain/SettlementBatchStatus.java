@@ -1,6 +1,9 @@
 package com.actilazion.aries_transaction.settlement.domain;
 
 public enum SettlementBatchStatus {
-    OPEN,
-    COMPLETED
+    PENDING,
+    PROCESSING,
+    PAID,
+    FAILED,
+    CANCELLED
 }

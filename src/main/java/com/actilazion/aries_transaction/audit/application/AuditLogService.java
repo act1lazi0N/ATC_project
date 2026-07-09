@@ -3,7 +3,7 @@ package com.actilazion.aries_transaction.audit.application;
 import com.actilazion.aries_transaction.audit.domain.AuditLog;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.audit.domain.AuditEventType;
-import com.actilazion.aries_transaction.audit.persistence.AuditLogRepository;
+import com.actilazion.aries_transaction.audit.infrastructure.AuditLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

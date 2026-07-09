@@ -4,7 +4,7 @@ import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEvent;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEventStatus;
-import com.actilazion.aries_transaction.outbox.persistence.OutboxEventRepository;
+import com.actilazion.aries_transaction.outbox.infrastructure.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

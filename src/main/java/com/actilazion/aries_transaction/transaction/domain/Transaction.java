@@ -1,12 +1,8 @@
 package com.actilazion.aries_transaction.transaction.domain;
 
-
-
-
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.audit.domain.AuditLog;
 import com.actilazion.aries_transaction.account.domain.Account;
-import com.actilazion.aries_transaction.transaction.exception.InvalidTransactionStateTransitionException;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -15,7 +11,6 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -127,10 +122,7 @@ public class Transaction {
     }
 
     private void transitionTo(TransactionStatus targetStatus) {
-        Objects.requireNonNull(targetStatus, "Transaction status must not be null");
-        if (!status.canTransitionTo(targetStatus)) {
-            throw new InvalidTransactionStateTransitionException(status, targetStatus);
-        }
+        TransactionStateGuard.assertCanTransition(status, targetStatus);
         this.status = targetStatus;
     }
 }

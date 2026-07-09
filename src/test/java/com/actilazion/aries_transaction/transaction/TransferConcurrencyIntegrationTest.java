@@ -34,6 +34,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -129,16 +130,85 @@ class TransferConcurrencyIntegrationTest {
         assertThat(outboxEventRepository.count()).isEqualTo(2);
     }
 
+    @Test
+    @DisplayName("Stress: many concurrent debits from same account preserve money invariants")
+    void stressConcurrentDebitsFromSameAccount_preservesMoneyInvariants() throws Exception {
+        senderAccount.setBalance(new BigDecimal("1000"));
+        accountRepository.save(senderAccount);
+
+        List<Account> receivers = IntStream.range(0, 20)
+                .mapToObj(index -> createAccount(
+                        createUser("stress-receiver-" + index + "-" + UUID.randomUUID() + "@test.com", "Stress Receiver " + index),
+                        BigDecimal.ZERO
+                ))
+                .toList();
+        List<Callable<?>> tasks = receivers.stream()
+                .<Callable<?>>map(receiverAccount -> () -> transferService.transfer(
+                        transferRequest(senderAccount, receiverAccount, new BigDecimal("75")),
+                        sender.getEmail()
+                ))
+                .toList();
+
+        List<Object> results = runConcurrently(tasks);
+
+        long successCount = results.stream().filter(TransactionResponse.class::isInstance).count();
+        long insufficientCount = results.stream().filter(InsufficientBalanceException.class::isInstance).count();
+
+        assertThat(successCount).isEqualTo(13);
+        assertThat(insufficientCount).isEqualTo(7);
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("25");
+        BigDecimal totalReceived = receivers.stream()
+                .map(account -> accountRepository.findById(account.getId()).orElseThrow().getBalance())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(totalReceived).isEqualByComparingTo("975");
+        assertThat(transactionRepository.count()).isEqualTo(successCount);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(successCount * 2);
+        assertThat(outboxEventRepository.count()).isEqualTo(successCount);
+        assertThat(idempotencyRecordRepository.count()).isEqualTo(successCount);
+    }
+
+    @Test
+    @DisplayName("Stress: many opposite transfers do not deadlock and preserve balances")
+    void stressOppositeTransfers_noDeadlockAndPreservesBalances() throws Exception {
+        List<Callable<?>> tasks = IntStream.range(0, 20)
+                .<Callable<?>>mapToObj(index -> () -> {
+                    Account fromAccount = index % 2 == 0 ? senderAccount : receiverAccount;
+                    Account toAccount = index % 2 == 0 ? receiverAccount : senderAccount;
+                    String actorEmail = index % 2 == 0 ? sender.getEmail() : receiver.getEmail();
+                    return transferService.transfer(
+                            transferRequest(fromAccount, toAccount, new BigDecimal("10")),
+                            actorEmail
+                    );
+                })
+                .toList();
+
+        List<Object> results = runConcurrently(tasks);
+
+        assertThat(results).filteredOn(TransactionResponse.class::isInstance).hasSize(20);
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1000");
+        assertThat(transactionRepository.count()).isEqualTo(20);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(40);
+        assertThat(outboxEventRepository.count()).isEqualTo(20);
+        assertThat(idempotencyRecordRepository.count()).isEqualTo(20);
+    }
+
     private List<Object> runConcurrently(Callable<?> first, Callable<?> second) throws Exception {
-        ExecutorService executor = Executors.newFixedThreadPool(2);
-        CountDownLatch ready = new CountDownLatch(2);
+        return runConcurrently(List.of(first, second));
+    }
+
+    private List<Object> runConcurrently(List<Callable<?>> tasks) throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(tasks.size());
+        CountDownLatch ready = new CountDownLatch(tasks.size());
         CountDownLatch start = new CountDownLatch(1);
 
         try {
-            List<Future<Object>> futures = List.of(
-                    executor.submit(awaitStartThenRun(first, ready, start)),
-                    executor.submit(awaitStartThenRun(second, ready, start))
-            );
+            List<Future<Object>> futures = tasks.stream()
+                    .map(task -> executor.submit(awaitStartThenRun(task, ready, start)))
+                    .toList();
 
             assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
             start.countDown();

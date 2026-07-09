@@ -55,4 +55,18 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             @Param("cutoffCompletedAt") OffsetDateTime cutoffCompletedAt
     );
 
+    @Query("""
+    SELECT t FROM Transaction t
+    WHERE t.currency = :currency
+      AND t.completedAt IS NOT NULL
+      AND t.completedAt >= :windowStart
+      AND t.completedAt < :windowEnd
+    ORDER BY t.completedAt ASC
+    """)
+    List<Transaction> findForReconciliation(
+            @Param("currency") String currency,
+            @Param("windowStart") OffsetDateTime windowStart,
+            @Param("windowEnd") OffsetDateTime windowEnd
+    );
+
 }

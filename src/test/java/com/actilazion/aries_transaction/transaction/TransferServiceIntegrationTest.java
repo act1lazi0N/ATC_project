@@ -172,8 +172,8 @@ public class TransferServiceIntegrationTest {
                 .findFirst()
                 .orElseThrow();
 
-        assertThat(debit.getAccount().getId()).isEqualTo(senderAccount.getId());
-        assertThat(credit.getAccount().getId()).isEqualTo(receiverAccount.getId());
+        assertThat(debit.getAccountId()).isEqualTo(senderAccount.getId());
+        assertThat(credit.getAccountId()).isEqualTo(receiverAccount.getId());
         assertThat(debit.getAmount()).isEqualByComparingTo("1250000");
         assertThat(credit.getAmount()).isEqualByComparingTo("1250000");
         assertThat(debit.getAmount()).isEqualByComparingTo(credit.getAmount());
@@ -181,8 +181,8 @@ public class TransferServiceIntegrationTest {
         assertThat(credit.getCurrency()).isEqualTo("VND");
         assertThat(debit.getEntryType()).isEqualTo(LedgerEntryType.TRANSFER);
         assertThat(credit.getEntryType()).isEqualTo(LedgerEntryType.TRANSFER);
-        assertThat(debit.getTransaction().getId()).isEqualTo(response.id());
-        assertThat(credit.getTransaction().getId()).isEqualTo(response.id());
+        assertThat(debit.getTransactionId()).isEqualTo(response.id());
+        assertThat(credit.getTransactionId()).isEqualTo(response.id());
     }
 
     @Test
@@ -483,9 +483,9 @@ public class TransferServiceIntegrationTest {
         List<LedgerEntry> reversalEntries = ledgerEntryRepository.findAllByTransactionId(reversal.id());
         assertThat(reversalEntries).hasSize(2);
         assertThat(reversalEntries).allSatisfy(entry -> assertThat(entry.getEntryType()).isEqualTo(LedgerEntryType.REVERSAL));
-        assertThat(reversalEntries.stream().filter(entry -> entry.getDirection() == LedgerDirection.DEBIT).findFirst().orElseThrow().getAccount().getId())
+        assertThat(reversalEntries.stream().filter(entry -> entry.getDirection() == LedgerDirection.DEBIT).findFirst().orElseThrow().getAccountId())
                 .isEqualTo(receiverAccount.getId());
-        assertThat(reversalEntries.stream().filter(entry -> entry.getDirection() == LedgerDirection.CREDIT).findFirst().orElseThrow().getAccount().getId())
+        assertThat(reversalEntries.stream().filter(entry -> entry.getDirection() == LedgerDirection.CREDIT).findFirst().orElseThrow().getAccountId())
                 .isEqualTo(senderAccount.getId());
         assertThat(outboxEventRepository.count()).isEqualTo(2);
     }

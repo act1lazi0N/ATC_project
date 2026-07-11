@@ -20,7 +20,7 @@ public class AuditLogService {
         Map<String, Object> payload = buildPayload(tx);
 
         AuditLog auditLog = AuditLog.builder()
-                .transaction(tx)
+                .transactionId(tx.getId())
                 .eventType(eventType)
                 .actorId(actorId)
                 .payload(payload)

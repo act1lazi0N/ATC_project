@@ -1,21 +1,12 @@
 package com.actilazion.aries_transaction.ledger.domain;
 
-
-
-import com.actilazion.aries_transaction.transaction.domain.Transaction;
-import com.actilazion.aries_transaction.account.domain.Account;
-import com.actilazion.aries_transaction.ledger.domain.LedgerDirection;
-import com.actilazion.aries_transaction.ledger.domain.LedgerEntryType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
-import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -42,13 +33,11 @@ public class LedgerEntry {
     @Column(updatable = false, nullable = false)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "transaction_id", nullable = false)
-    private Transaction transaction;
+    @Column(name = "transaction_id", nullable = false)
+    private UUID transactionId;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "account_id", nullable = false)
-    private Account account;
+    @Column(name = "account_id", nullable = false)
+    private UUID accountId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)

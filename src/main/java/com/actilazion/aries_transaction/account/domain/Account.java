@@ -1,11 +1,6 @@
 package com.actilazion.aries_transaction.account.domain;
 
-
-
-import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.identity.domain.User;
-import com.actilazion.aries_transaction.account.domain.AccountStatus;
-import com.actilazion.aries_transaction.account.domain.AccountType;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -13,8 +8,6 @@ import org.hibernate.annotations.UpdateTimestamp;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -64,13 +57,4 @@ public class Account {
     @Column(name = "updated_at", nullable = false)
     private OffsetDateTime updatedAt;
 
-    // All sender transactions
-    @OneToMany(mappedBy = "fromAccount", fetch = FetchType.LAZY)
-    @Builder.Default
-    private List<Transaction> outgoingTransactions = new ArrayList<>();
-
-    // All receiver transactions
-    @OneToMany(mappedBy = "toAccount", fetch = FetchType.LAZY)
-    @Builder.Default
-    private List<Transaction> incomingTransactions = new ArrayList<>();
 }

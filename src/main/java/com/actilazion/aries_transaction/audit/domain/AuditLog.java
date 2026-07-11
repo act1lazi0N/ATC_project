@@ -1,9 +1,5 @@
 package com.actilazion.aries_transaction.audit.domain;
 
-
-
-import com.actilazion.aries_transaction.transaction.domain.Transaction;
-import com.actilazion.aries_transaction.audit.domain.AuditEventType;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -28,9 +24,8 @@ public class AuditLog {
     @Column(updatable = false, nullable = false)
     private UUID id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "transaction_id", nullable = false)
-    private Transaction transaction;
+    @Column(name = "transaction_id", nullable = false)
+    private UUID transactionId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "event_type", nullable = false, length = 50)

@@ -91,8 +91,8 @@ public class LedgerService {
             LedgerEntryType entryType
     ) {
         return LedgerEntry.builder()
-                .transaction(tx)
-                .account(account)
+                .transactionId(tx.getId())
+                .accountId(account.getId())
                 .direction(direction)
                 .amount(amount)
                 .currency(tx.getCurrency())

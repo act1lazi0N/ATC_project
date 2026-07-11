@@ -5,7 +5,6 @@ import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
 import com.actilazion.aries_transaction.common.dto.ApiResponse;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
-import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.transaction.application.TransferService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;

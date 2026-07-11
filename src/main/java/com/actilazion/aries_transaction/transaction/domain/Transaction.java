@@ -1,7 +1,6 @@
 package com.actilazion.aries_transaction.transaction.domain;
 
 import com.actilazion.aries_transaction.identity.domain.User;
-import com.actilazion.aries_transaction.audit.domain.AuditLog;
 import com.actilazion.aries_transaction.account.domain.Account;
 import jakarta.persistence.*;
 import lombok.*;
@@ -9,8 +8,6 @@ import org.hibernate.annotations.CreationTimestamp;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -83,10 +80,6 @@ public class Transaction {
 
     @Column(name = "completed_at")
     private OffsetDateTime completedAt;
-
-    @OneToMany(mappedBy = "transaction", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    @Builder.Default
-    private List<AuditLog> auditLogs = new ArrayList<>();
 
     public void markCompleted(OffsetDateTime completedAt) {
         if (status == TransactionStatus.COMPLETED) {

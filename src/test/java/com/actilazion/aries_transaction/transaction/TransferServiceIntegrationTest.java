@@ -51,7 +51,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 
-@DataJpaTest
+@DataJpaTest(showSql = false)
 @ActiveProfiles("test")
 @Import({TransferServiceImpl.class, AuditLogService.class, OutboxEventService.class, LedgerService.class, IdempotencyService.class})
 public class TransferServiceIntegrationTest {

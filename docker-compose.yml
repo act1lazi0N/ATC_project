@@ -64,7 +64,7 @@ services:
       # JPA — validate schema
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
 
-      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-docker}
+      SPRING_PROFILES_ACTIVE: docker
     depends_on:
       postgres:
         condition: service_healthy

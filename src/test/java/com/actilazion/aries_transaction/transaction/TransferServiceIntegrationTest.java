@@ -42,6 +42,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.math.BigDecimal;
@@ -74,6 +75,7 @@ public class TransferServiceIntegrationTest {
     UserRepository userRepository;
 
     private User sender;
+    private User receiver;
     private Account senderAccount;
     private Account receiverAccount;
 
@@ -86,7 +88,7 @@ public class TransferServiceIntegrationTest {
                 .role(Role.USER)
                 .build());
 
-        User receiver = userRepository.save(User.builder()
+        receiver = userRepository.save(User.builder()
                 .fullName("Tran Thi B")
                 .email("receiver@test.com")
                 .passwordHash("hashed")
@@ -141,6 +143,31 @@ public class TransferServiceIntegrationTest {
 
         assertThat(updatedSender.getBalance()).isEqualByComparingTo("4000000");
         assertThat(updatedReceiver.getBalance()).isEqualByComparingTo("2000000");
+    }
+
+    @Test
+    @DisplayName("Transfer from another user's account is rejected")
+    void transfer_fromForeignAccount_throwsAccessDenied() {
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("1000000"),
+                UUID.randomUUID().toString(),
+                "VND",
+                "Unauthorized debit"
+        );
+
+        assertThatThrownBy(() -> transferService.transfer(request, receiver.getEmail()))
+                .isInstanceOf(AccessDeniedException.class);
+
+        em.clear();
+        assertThat(transactionRepository.count()).isZero();
+        assertThat(ledgerEntryRepository.count()).isZero();
+        assertThat(outboxEventRepository.count()).isZero();
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("5000000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1000000");
     }
 
     @Test
@@ -491,6 +518,31 @@ public class TransferServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("Reverse another user's transaction is rejected")
+    void reverse_foreignOriginalTransaction_throwsAccessDenied() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        assertThatThrownBy(() -> transferService.reverse(
+                transfer.id(),
+                new ReversalRequest(UUID.randomUUID().toString(), "Unauthorized reversal"),
+                receiver.getEmail()
+        )).isInstanceOf(AccessDeniedException.class);
+
+        em.flush();
+        em.clear();
+
+        var original = transactionRepository.findById(transfer.id()).orElseThrow();
+        assertThat(original.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(2);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("4000000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("2000000");
+    }
+
+    @Test
     @DisplayName("Double reversal is rejected")
     void reverse_alreadyReversed_throwsInvalidState() {
         var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
@@ -659,6 +711,32 @@ public class TransferServiceIntegrationTest {
         assertThat(transactionRepository.count()).isEqualTo(3);
         assertThat(ledgerEntryRepository.count()).isEqualTo(6);
         assertThat(outboxEventRepository.count()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("Refund another user's transaction is rejected")
+    void refund_foreignOriginalTransaction_throwsAccessDenied() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        assertThatThrownBy(() -> transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), "Unauthorized refund"),
+                receiver.getEmail()
+        )).isInstanceOf(AccessDeniedException.class);
+
+        em.flush();
+        em.clear();
+
+        var original = transactionRepository.findById(transfer.id()).orElseThrow();
+        assertThat(original.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(original.getRefundedAmount()).isEqualByComparingTo("0");
+        assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(2);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("4000000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("2000000");
     }
 
     @Test

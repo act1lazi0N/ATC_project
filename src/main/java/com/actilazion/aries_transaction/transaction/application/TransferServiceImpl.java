@@ -33,6 +33,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -158,13 +159,12 @@ public class TransferServiceImpl implements TransferService {
             fromAccount = lockAccount(fromId);
         }
 
+        User initiator = loadInitiator(initiatorEmail);
+        assertOwnsAccount(fromAccount, initiator);
         validateAccountActive(fromAccount);
         validateAccountActive(toAccount);
         validateCurrency(fromAccount, toAccount, request.currency());
         validateSufficientBalance(fromAccount, request.amount());
-
-        User initiator = userRepository.findByEmail(initiatorEmail)
-                .orElseThrow(() -> new ResourceNotFoundException("User", initiatorEmail));
 
         Transaction tx = Transaction.builder()
                 .fromAccount(fromAccount)
@@ -199,6 +199,8 @@ public class TransferServiceImpl implements TransferService {
     }
 
     private TransactionResponse doReverse(Transaction original, ReversalRequest request, String initiatorEmail) {
+        User initiator = loadInitiator(initiatorEmail);
+        assertOwnsOriginalSourceAccount(original, initiator);
         TransactionStateGuard.assertCanReverse(original);
 
         Account fromAccount = original.getToAccount();
@@ -220,7 +222,7 @@ public class TransferServiceImpl implements TransferService {
                 original.getAmount(),
                 request.idempotencyKey(),
                 request.description(),
-                initiatorEmail
+                initiator
         );
 
         moveBalance(lockedFromAccount, lockedToAccount, original.getAmount());
@@ -239,6 +241,8 @@ public class TransferServiceImpl implements TransferService {
     }
 
     private TransactionResponse doRefund(Transaction original, RefundRequest request, String initiatorEmail) {
+        User initiator = loadInitiator(initiatorEmail);
+        assertOwnsOriginalSourceAccount(original, initiator);
         TransactionStateGuard.assertCanRefund(original);
 
         BigDecimal alreadyRefunded = original.getRefundedAmount() != null
@@ -268,7 +272,7 @@ public class TransferServiceImpl implements TransferService {
                 request.amount(),
                 request.idempotencyKey(),
                 request.description(),
-                initiatorEmail
+                initiator
         );
 
         moveBalance(lockedFromAccount, lockedToAccount, request.amount());
@@ -299,14 +303,11 @@ public class TransferServiceImpl implements TransferService {
             BigDecimal amount,
             String idempotencyKey,
             String description,
-            String initiatorEmail
+            User initiator
     ) {
         validateAccountActive(fromAccount);
         validateAccountActive(toAccount);
         validateSufficientBalance(fromAccount, amount);
-
-        User initiator = userRepository.findByEmail(initiatorEmail)
-                .orElseThrow(() -> new ResourceNotFoundException("User", initiatorEmail));
 
         return Transaction.builder()
                 .fromAccount(fromAccount)
@@ -319,6 +320,21 @@ public class TransferServiceImpl implements TransferService {
                 .originalTransaction(original)
                 .status(TransactionStatus.PENDING)
                 .build();
+    }
+
+    private User loadInitiator(String initiatorEmail) {
+        return userRepository.findByEmail(initiatorEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User", initiatorEmail));
+    }
+
+    private void assertOwnsAccount(Account account, User initiator) {
+        if (!account.getUser().getId().equals(initiator.getId())) {
+            throw new AccessDeniedException("Caller is not authorized for this account");
+        }
+    }
+
+    private void assertOwnsOriginalSourceAccount(Transaction original, User initiator) {
+        assertOwnsAccount(original.getFromAccount(), initiator);
     }
 
     private void moveBalance(Account fromAccount, Account toAccount, BigDecimal amount) {

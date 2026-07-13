@@ -76,6 +76,8 @@ public class TransferServiceIntegrationTest {
 
     private User sender;
     private User receiver;
+    private User operator;
+    private User admin;
     private Account senderAccount;
     private Account receiverAccount;
 
@@ -85,7 +87,7 @@ public class TransferServiceIntegrationTest {
                 .fullName("Nguyen Van A")
                 .email("sender@test.com")
                 .passwordHash("hashed")
-                .role(Role.USER)
+                .role(Role.MERCHANT)
                 .build());
 
         receiver = userRepository.save(User.builder()
@@ -93,6 +95,20 @@ public class TransferServiceIntegrationTest {
                 .email("receiver@test.com")
                 .passwordHash("hashed")
                 .role(Role.USER)
+                .build());
+
+        operator = userRepository.save(User.builder()
+                .fullName("Operations User")
+                .email("operator@test.com")
+                .passwordHash("hashed")
+                .role(Role.OPERATOR)
+                .build());
+
+        admin = userRepository.save(User.builder()
+                .fullName("Admin User")
+                .email("admin@test.com")
+                .passwordHash("hashed")
+                .role(Role.ADMIN)
                 .build());
 
         senderAccount = accountRepository.save(Account.builder()
@@ -486,7 +502,7 @@ public class TransferServiceIntegrationTest {
         var reversal = transferService.reverse(
                 transfer.id(),
                 new ReversalRequest(UUID.randomUUID().toString(), "Reverse mistaken transfer"),
-                sender.getEmail()
+                operator.getEmail()
         );
 
         em.flush();
@@ -518,14 +534,33 @@ public class TransferServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("Reverse another user's transaction is rejected")
-    void reverse_foreignOriginalTransaction_throwsAccessDenied() {
+    @DisplayName("Admin can reverse a completed transfer")
+    void reverse_adminRole_success() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        var reversal = transferService.reverse(
+                transfer.id(),
+                new ReversalRequest(UUID.randomUUID().toString(), "Admin reversal"),
+                admin.getEmail()
+        );
+
+        em.flush();
+        em.clear();
+
+        assertThat(reversal.status()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(transactionRepository.findById(transfer.id()).orElseThrow().getStatus())
+                .isEqualTo(TransactionStatus.REVERSED);
+    }
+
+    @Test
+    @DisplayName("Merchant cannot reverse a completed transfer")
+    void reverse_merchantRole_throwsAccessDenied() {
         var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
 
         assertThatThrownBy(() -> transferService.reverse(
                 transfer.id(),
                 new ReversalRequest(UUID.randomUUID().toString(), "Unauthorized reversal"),
-                receiver.getEmail()
+                sender.getEmail()
         )).isInstanceOf(AccessDeniedException.class);
 
         em.flush();
@@ -549,13 +584,13 @@ public class TransferServiceIntegrationTest {
         transferService.reverse(
                 transfer.id(),
                 new ReversalRequest(UUID.randomUUID().toString(), null),
-                sender.getEmail()
+                operator.getEmail()
         );
 
         assertThatThrownBy(() -> transferService.reverse(
                 transfer.id(),
                 new ReversalRequest(UUID.randomUUID().toString(), null),
-                sender.getEmail()
+                operator.getEmail()
         )).isInstanceOf(InvalidTransactionStateTransitionException.class);
 
         assertThat(transactionRepository.count()).isEqualTo(2);
@@ -570,8 +605,8 @@ public class TransferServiceIntegrationTest {
         String sameKey = UUID.randomUUID().toString();
         var request = new ReversalRequest(sameKey, "Reverse once");
 
-        var firstResponse = transferService.reverse(transfer.id(), request, sender.getEmail());
-        var secondResponse = transferService.reverse(transfer.id(), request, sender.getEmail());
+        var firstResponse = transferService.reverse(transfer.id(), request, operator.getEmail());
+        var secondResponse = transferService.reverse(transfer.id(), request, operator.getEmail());
 
         assertThat(secondResponse).isEqualTo(firstResponse);
         assertThat(transactionRepository.count()).isEqualTo(2);
@@ -591,13 +626,13 @@ public class TransferServiceIntegrationTest {
         transferService.reverse(
                 transfer.id(),
                 new ReversalRequest(sameKey, "Reverse once"),
-                sender.getEmail()
+                operator.getEmail()
         );
 
         assertThatThrownBy(() -> transferService.reverse(
                 transfer.id(),
                 new ReversalRequest(sameKey, "Different reason"),
-                sender.getEmail()
+                operator.getEmail()
         )).isInstanceOf(IdempotencyConflictException.class);
 
         assertThat(transactionRepository.count()).isEqualTo(2);
@@ -621,7 +656,7 @@ public class TransferServiceIntegrationTest {
             assertThatThrownBy(() -> transferService.reverse(
                     tx.getId(),
                     new ReversalRequest(idempotencyKey, null),
-                    sender.getEmail()
+                    operator.getEmail()
             )).isInstanceOf(InvalidTransactionStateTransitionException.class);
         }
     }
@@ -639,7 +674,7 @@ public class TransferServiceIntegrationTest {
         assertThatThrownBy(() -> transferService.reverse(
                 transfer.id(),
                 new ReversalRequest(idempotencyKey, null),
-                sender.getEmail()
+                operator.getEmail()
         )).isInstanceOf(AccountNotActiveException.class);
 
         assertThat(transactionRepository.count()).isEqualTo(1);
@@ -660,7 +695,7 @@ public class TransferServiceIntegrationTest {
         assertThatThrownBy(() -> transferService.reverse(
                 transfer.id(),
                 new ReversalRequest(idempotencyKey, null),
-                sender.getEmail()
+                operator.getEmail()
         )).isInstanceOf(InsufficientBalanceException.class);
 
         assertThat(transactionRepository.count()).isEqualTo(1);
@@ -714,8 +749,28 @@ public class TransferServiceIntegrationTest {
     }
 
     @Test
-    @DisplayName("Refund another user's transaction is rejected")
-    void refund_foreignOriginalTransaction_throwsAccessDenied() {
+    @DisplayName("Operator can refund another merchant's transaction")
+    void refund_operatorRole_success() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        var refund = transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), "Operator refund"),
+                operator.getEmail()
+        );
+
+        em.flush();
+        em.clear();
+
+        assertThat(refund.status()).isEqualTo(TransactionStatus.COMPLETED);
+        var original = transactionRepository.findById(transfer.id()).orElseThrow();
+        assertThat(original.getStatus()).isEqualTo(TransactionStatus.PARTIALLY_REFUNDED);
+        assertThat(original.getRefundedAmount()).isEqualByComparingTo("400000");
+    }
+
+    @Test
+    @DisplayName("User cannot refund another user's transaction")
+    void refund_userRole_throwsAccessDenied() {
         var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
 
         assertThatThrownBy(() -> transferService.refund(
@@ -737,6 +792,28 @@ public class TransferServiceIntegrationTest {
                 .isEqualByComparingTo("4000000");
         assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
                 .isEqualByComparingTo("2000000");
+    }
+
+    @Test
+    @DisplayName("Admin cannot refund unless granted operator policy")
+    void refund_adminRole_throwsAccessDenied() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        assertThatThrownBy(() -> transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), "Admin refund"),
+                admin.getEmail()
+        )).isInstanceOf(AccessDeniedException.class);
+
+        em.flush();
+        em.clear();
+
+        var original = transactionRepository.findById(transfer.id()).orElseThrow();
+        assertThat(original.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(original.getRefundedAmount()).isEqualByComparingTo("0");
+        assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(2);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
     }
 
     @Test

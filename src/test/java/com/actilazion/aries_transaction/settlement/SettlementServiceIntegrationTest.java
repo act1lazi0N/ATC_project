@@ -66,6 +66,7 @@ class SettlementServiceIntegrationTest {
     @Autowired LedgerEntryRepository ledgerEntryRepository;
 
     private User sender;
+    private User operator;
     private Account senderAccount;
     private Account receiverAccount;
 
@@ -75,7 +76,7 @@ class SettlementServiceIntegrationTest {
                 .fullName("Settlement Sender")
                 .email("settlement-sender@test.com")
                 .passwordHash("hashed")
-                .role(Role.USER)
+                .role(Role.MERCHANT)
                 .build());
 
         User receiver = userRepository.save(User.builder()
@@ -108,6 +109,13 @@ class SettlementServiceIntegrationTest {
                 .email("system@aries.internal")
                 .passwordHash("hashed")
                 .role(Role.ADMIN)
+                .build());
+
+        operator = userRepository.save(User.builder()
+                .fullName("Settlement Operator")
+                .email("settlement-operator@test.com")
+                .passwordHash("hashed")
+                .role(Role.OPERATOR)
                 .build());
 
         accountRepository.save(systemAccount(system, "CLEARING-VND", AccountType.CLEARING));
@@ -174,7 +182,7 @@ class SettlementServiceIntegrationTest {
         transferService.reverse(
                 reversed.id(),
                 new ReversalRequest(UUID.randomUUID().toString(), "Reverse before settlement"),
-                sender.getEmail()
+                operator.getEmail()
         );
         transferService.refund(
                 refunded.id(),

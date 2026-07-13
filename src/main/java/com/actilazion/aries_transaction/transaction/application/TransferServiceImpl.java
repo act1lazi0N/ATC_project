@@ -6,6 +6,7 @@ import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
+import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.account.domain.AccountStatus;
 import com.actilazion.aries_transaction.audit.domain.AuditEventType;
@@ -72,13 +73,15 @@ public class TransferServiceImpl implements TransferService {
     @Transactional
     public TransactionResponse reverse(UUID originalTransactionId, ReversalRequest request, String initiatorEmail) {
         Transaction original = lockTransaction(originalTransactionId);
+        User initiator = loadInitiator(initiatorEmail);
+        assertCanReverse(initiator);
         var existing = idempotencyService.findByKey(request.idempotencyKey());
         if (existing.isPresent()) {
             return responseForIdempotentRetry(existing.get(), request, original);
         }
 
         IdempotencyRecord record = idempotencyService.createProcessingRecord(request, original);
-        TransactionResponse response = doReverse(original, request, initiatorEmail);
+        TransactionResponse response = doReverse(original, request, initiator);
         Transaction tx = transactionRepository.getReferenceById(response.id());
         idempotencyService.markCompleted(record, tx, response);
         return response;
@@ -88,13 +91,15 @@ public class TransferServiceImpl implements TransferService {
     @Transactional
     public TransactionResponse refund(UUID originalTransactionId, RefundRequest request, String initiatorEmail) {
         Transaction original = lockTransaction(originalTransactionId);
+        User initiator = loadInitiator(initiatorEmail);
+        assertCanRefund(original, initiator);
         var existing = idempotencyService.findByKey(request.idempotencyKey());
         if (existing.isPresent()) {
             return responseForIdempotentRetry(existing.get(), request, original);
         }
 
         IdempotencyRecord record = idempotencyService.createProcessingRecord(request, original);
-        TransactionResponse response = doRefund(original, request, initiatorEmail);
+        TransactionResponse response = doRefund(original, request, initiator);
         Transaction tx = transactionRepository.getReferenceById(response.id());
         idempotencyService.markCompleted(record, tx, response);
         return response;
@@ -198,9 +203,7 @@ public class TransferServiceImpl implements TransferService {
         return TransactionResponse.from(tx);
     }
 
-    private TransactionResponse doReverse(Transaction original, ReversalRequest request, String initiatorEmail) {
-        User initiator = loadInitiator(initiatorEmail);
-        assertOwnsOriginalSourceAccount(original, initiator);
+    private TransactionResponse doReverse(Transaction original, ReversalRequest request, User initiator) {
         TransactionStateGuard.assertCanReverse(original);
 
         Account fromAccount = original.getToAccount();
@@ -234,15 +237,13 @@ public class TransferServiceImpl implements TransferService {
 
         ledgerService.recordReversal(tx);
         outboxEventService.recordReversalCompleted(tx);
-        auditLogService.log(original, AuditEventType.TRANSFER_REVERSED, initiatorEmail);
-        auditLogService.log(tx, AuditEventType.TRANSFER_COMPLETED, initiatorEmail);
+        auditLogService.log(original, AuditEventType.TRANSFER_REVERSED, initiator.getEmail());
+        auditLogService.log(tx, AuditEventType.TRANSFER_COMPLETED, initiator.getEmail());
 
         return TransactionResponse.from(tx);
     }
 
-    private TransactionResponse doRefund(Transaction original, RefundRequest request, String initiatorEmail) {
-        User initiator = loadInitiator(initiatorEmail);
-        assertOwnsOriginalSourceAccount(original, initiator);
+    private TransactionResponse doRefund(Transaction original, RefundRequest request, User initiator) {
         TransactionStateGuard.assertCanRefund(original);
 
         BigDecimal alreadyRefunded = original.getRefundedAmount() != null
@@ -290,8 +291,8 @@ public class TransferServiceImpl implements TransferService {
 
         ledgerService.recordRefund(tx);
         outboxEventService.recordRefundCompleted(tx);
-        auditLogService.log(original, AuditEventType.TRANSFER_REFUNDED, initiatorEmail);
-        auditLogService.log(tx, AuditEventType.TRANSFER_COMPLETED, initiatorEmail);
+        auditLogService.log(original, AuditEventType.TRANSFER_REFUNDED, initiator.getEmail());
+        auditLogService.log(tx, AuditEventType.TRANSFER_COMPLETED, initiator.getEmail());
 
         return TransactionResponse.from(tx);
     }
@@ -335,6 +336,23 @@ public class TransferServiceImpl implements TransferService {
 
     private void assertOwnsOriginalSourceAccount(Transaction original, User initiator) {
         assertOwnsAccount(original.getFromAccount(), initiator);
+    }
+
+    private void assertCanReverse(User initiator) {
+        if (initiator.getRole() != Role.ADMIN && initiator.getRole() != Role.OPERATOR) {
+            throw new AccessDeniedException("Caller is not authorized to reverse transactions");
+        }
+    }
+
+    private void assertCanRefund(Transaction original, User initiator) {
+        if (initiator.getRole() == Role.OPERATOR) {
+            return;
+        }
+        if (initiator.getRole() == Role.MERCHANT) {
+            assertOwnsOriginalSourceAccount(original, initiator);
+            return;
+        }
+        throw new AccessDeniedException("Caller is not authorized to refund transactions");
     }
 
     private void moveBalance(Account fromAccount, Account toAccount, BigDecimal amount) {

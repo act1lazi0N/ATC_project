@@ -355,6 +355,31 @@ public class TransferServiceImpl implements TransferService {
         throw new AccessDeniedException("Caller is not authorized to refund transactions");
     }
 
+    private void assertCanViewTransaction(Transaction transaction, User viewer) {
+        if (isPrivileged(viewer)) {
+            return;
+        }
+        if (isAccountOwner(transaction.getFromAccount(), viewer) || isAccountOwner(transaction.getToAccount(), viewer)) {
+            return;
+        }
+        throw new AccessDeniedException("Caller is not authorized to view this transaction");
+    }
+
+    private void assertCanViewAccount(Account account, User viewer) {
+        if (isPrivileged(viewer)) {
+            return;
+        }
+        assertOwnsAccount(account, viewer);
+    }
+
+    private boolean isPrivileged(User user) {
+        return user.getRole() == Role.ADMIN || user.getRole() == Role.OPERATOR;
+    }
+
+    private boolean isAccountOwner(Account account, User user) {
+        return account.getUser().getId().equals(user.getId());
+    }
+
     private void moveBalance(Account fromAccount, Account toAccount, BigDecimal amount) {
         fromAccount.setBalance(fromAccount.getBalance().subtract(amount));
         toAccount.setBalance(toAccount.getBalance().add(amount));
@@ -364,15 +389,21 @@ public class TransferServiceImpl implements TransferService {
 
     @Override
     @Transactional(readOnly = true)
-    public TransactionResponse getById(UUID txId) {
+    public TransactionResponse getById(UUID txId, String viewerEmail) {
         Transaction tx = transactionRepository.findById(txId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transaction", txId));
+        User viewer = loadInitiator(viewerEmail);
+        assertCanViewTransaction(tx, viewer);
         return TransactionResponse.from(tx);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<TransactionResponse> getByAccount(UUID accountId, Pageable pageable) {
+    public Page<TransactionResponse> getByAccount(UUID accountId, Pageable pageable, String viewerEmail) {
+        Account account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
+        User viewer = loadInitiator(viewerEmail);
+        assertCanViewAccount(account, viewer);
         return transactionRepository
                 .findAllByAccountId(accountId, pageable)
                 .map(TransactionResponse::from);

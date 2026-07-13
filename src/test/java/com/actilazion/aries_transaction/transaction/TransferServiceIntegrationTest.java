@@ -3,6 +3,7 @@ package com.actilazion.aries_transaction.transaction;
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
 import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
 import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
+import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.ledger.domain.LedgerEntry;
 import com.actilazion.aries_transaction.identity.domain.User;
@@ -42,6 +43,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.test.context.ActiveProfiles;
 
@@ -78,6 +80,7 @@ public class TransferServiceIntegrationTest {
     private User receiver;
     private User operator;
     private User admin;
+    private User outsider;
     private Account senderAccount;
     private Account receiverAccount;
 
@@ -109,6 +112,13 @@ public class TransferServiceIntegrationTest {
                 .email("admin@test.com")
                 .passwordHash("hashed")
                 .role(Role.ADMIN)
+                .build());
+
+        outsider = userRepository.save(User.builder()
+                .fullName("Outside User")
+                .email("outsider@test.com")
+                .passwordHash("hashed")
+                .role(Role.USER)
                 .build());
 
         senderAccount = accountRepository.save(Account.builder()
@@ -947,6 +957,70 @@ public class TransferServiceIntegrationTest {
         assertThat(transactionRepository.count()).isEqualTo(1);
         assertThat(ledgerEntryRepository.count()).isEqualTo(2);
         assertThat(outboxEventRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("Transaction detail is visible to sender and receiver")
+    void getById_participantUsers_success() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        var senderView = transferService.getById(transfer.id(), sender.getEmail());
+        var receiverView = transferService.getById(transfer.id(), receiver.getEmail());
+
+        assertThat(senderView.id()).isEqualTo(transfer.id());
+        assertThat(receiverView.id()).isEqualTo(transfer.id());
+    }
+
+    @Test
+    @DisplayName("Transaction detail is visible to operator")
+    void getById_operatorRole_success() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        var operatorView = transferService.getById(transfer.id(), operator.getEmail());
+
+        assertThat(operatorView.id()).isEqualTo(transfer.id());
+    }
+
+    @Test
+    @DisplayName("Transaction detail is hidden from unrelated user")
+    void getById_unrelatedUser_throwsAccessDenied() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        assertThatThrownBy(() -> transferService.getById(transfer.id(), outsider.getEmail()))
+                .isInstanceOf(AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("Account transaction history is visible to account owner")
+    void getByAccount_ownerUser_success() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        var page = transferService.getByAccount(receiverAccount.getId(), PageRequest.of(0, 20), receiver.getEmail());
+
+        assertThat(page.getContent())
+                .extracting(TransactionResponse::id)
+                .containsExactly(transfer.id());
+    }
+
+    @Test
+    @DisplayName("Account transaction history is visible to operator")
+    void getByAccount_operatorRole_success() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        var page = transferService.getByAccount(receiverAccount.getId(), PageRequest.of(0, 20), operator.getEmail());
+
+        assertThat(page.getContent())
+                .extracting(TransactionResponse::id)
+                .containsExactly(transfer.id());
+    }
+
+    @Test
+    @DisplayName("Account transaction history is hidden from non-owner")
+    void getByAccount_nonOwnerUser_throwsAccessDenied() {
+        transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        assertThatThrownBy(() -> transferService.getByAccount(receiverAccount.getId(), PageRequest.of(0, 20), sender.getEmail()))
+                .isInstanceOf(AccessDeniedException.class);
     }
 
     private TransferRequest transferRequest(String amount) {

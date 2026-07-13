@@ -64,17 +64,19 @@ public class TransferController {
     @GetMapping("/{id}")
     @Operation(summary = "Get transaction detail by ID")
     public ResponseEntity<ApiResponse<TransactionResponse>> getById(
-            @PathVariable("id") UUID id
+            @PathVariable("id") UUID id,
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
-        return ResponseEntity.ok(ApiResponse.ok("Transaction detail", transferService.getById(id)));
+        return ResponseEntity.ok(ApiResponse.ok("Transaction detail", transferService.getById(id, userDetails.getUsername())));
     }
 
     @GetMapping("/account/{accountId}")
     @Operation(summary = "Get paginated transaction history for an account")
     public ResponseEntity<ApiResponse<Page<TransactionResponse>>> getByAccount(
             @PathVariable UUID accountId,
-            @PageableDefault(size = 20, sort = "createdAt")Pageable pageable
+            @PageableDefault(size = 20, sort = "createdAt")Pageable pageable,
+            @AuthenticationPrincipal UserDetails userDetails
             ) {
-        return ResponseEntity.ok(ApiResponse.ok("Transaction history", transferService.getByAccount(accountId, pageable)));
+        return ResponseEntity.ok(ApiResponse.ok("Transaction history", transferService.getByAccount(accountId, pageable, userDetails.getUsername())));
     }
 }

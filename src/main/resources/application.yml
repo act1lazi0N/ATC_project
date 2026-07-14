@@ -35,6 +35,12 @@ jwt:
   secret: ${JWT_SECRET}
   expiration: 86400
 
+springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:false}
+  swagger-ui:
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:false}
+
 app:
   outbox:
     worker-enabled: ${OUTBOX_WORKER_ENABLED:false}

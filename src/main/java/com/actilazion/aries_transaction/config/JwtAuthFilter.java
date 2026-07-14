@@ -39,18 +39,40 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         try {
             userEmail = jwtService.extractUsername(jwt);
         } catch (Exception e) {
-            filterChain.doFilter(request, response);
+            reject(response);
             return;
         }
 
         if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
-            if (jwtService.isTokenValid(jwt, userDetails)) {
+            try {
+                UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
+                if (!isAccountUsable(userDetails) || !jwtService.isTokenValid(jwt, userDetails)) {
+                    reject(response);
+                    return;
+                }
+
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authToken);
+            } catch (Exception e) {
+                reject(response);
+                return;
             }
         }
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isAccountUsable(UserDetails userDetails) {
+        return userDetails.isEnabled()
+                && userDetails.isAccountNonExpired()
+                && userDetails.isAccountNonLocked()
+                && userDetails.isCredentialsNonExpired();
+    }
+
+    private void reject(HttpServletResponse response) throws IOException {
+        SecurityContextHolder.clearContext();
+        response.setHeader("WWW-Authenticate", "Bearer");
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.flushBuffer();
     }
 }

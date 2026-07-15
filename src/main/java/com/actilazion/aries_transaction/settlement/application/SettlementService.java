@@ -10,8 +10,9 @@ public interface SettlementService {
             String currency,
             int feeRateBps,
             String idempotencyKey,
-            OffsetDateTime cutoffCompletedAt
+            OffsetDateTime cutoffCompletedAt,
+            String initiatorEmail
     );
 
-    SettlementBatchResponse getBatch(UUID batchId);
+    SettlementBatchResponse getBatch(UUID batchId, String initiatorEmail);
 }

@@ -15,7 +15,7 @@ import java.util.UUID;
     name = "transactions",
     uniqueConstraints = @UniqueConstraint(
         name = "uk_transactions_idempotency_key",
-        columnNames = "idempotency_key"
+        columnNames = {"idempotency_key", "initiated_by"}
     )
 )
 @Getter

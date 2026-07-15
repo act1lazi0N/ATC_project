@@ -30,6 +30,13 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.setHeader("WWW-Authenticate", "Bearer");
+                            response.sendError(401);
+                        })
+                        .accessDeniedHandler((request, response, accessDeniedException) ->
+                                response.sendError(403)))
                 .sessionManagement(s ->
                         s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
@@ -37,8 +44,6 @@ public class SecurityConfig {
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
-                        .requestMatchers("/api/v1/settlements/**", "/api/v1/reconciliation/**")
-                        .hasAnyRole("ADMIN", "OPERATOR")
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider())

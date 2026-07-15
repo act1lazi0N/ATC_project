@@ -10,6 +10,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,20 +32,28 @@ public class SettlementController {
     @PostMapping("/batches")
     @Operation(summary = "Create a settlement batch from completed unsettled transactions")
     public ResponseEntity<ApiResponse<SettlementBatchResponse>> createBatch(
-            @Valid @RequestBody CreateSettlementBatchRequest request
+            @Valid @RequestBody CreateSettlementBatchRequest request,
+            @AuthenticationPrincipal UserDetails userDetails
     ) {
         SettlementBatchResponse response = settlementService.createBatch(
                 request.currency(),
                 request.feeRateBps(),
                 request.idempotencyKey(),
-                request.cutoffCompletedAt()
+                request.cutoffCompletedAt(),
+                userDetails.getUsername()
         );
         return ResponseEntity.ok(ApiResponse.ok("Settlement batch created", response));
     }
 
     @GetMapping("/batches/{id}")
     @Operation(summary = "Get settlement batch detail")
-    public ResponseEntity<ApiResponse<SettlementBatchResponse>> getBatch(@PathVariable UUID id) {
-        return ResponseEntity.ok(ApiResponse.ok("Settlement batch detail", settlementService.getBatch(id)));
+    public ResponseEntity<ApiResponse<SettlementBatchResponse>> getBatch(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                "Settlement batch detail",
+                settlementService.getBatch(id, userDetails.getUsername())
+        ));
     }
 }

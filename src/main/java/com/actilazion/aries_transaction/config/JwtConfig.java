@@ -12,5 +12,8 @@ import org.springframework.stereotype.Component;
 public class JwtConfig {
     private String secret;
     private long expiration = 86400L;   // default 24h
+    private String issuer = "aries-transaction";
+    private String audience = "aries-transaction-api";
+    private String tokenType = "access";
 
 }

@@ -451,6 +451,67 @@ public class TransferServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("Foreign user cannot replay another user's idempotent transfer response")
+    void transfer_duplicateIdempotencyKeyForeignUser_throwsAccessDenied() {
+        String sameKey = UUID.randomUUID().toString();
+        var request = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("100000"),
+                sameKey,
+                "VND",
+                null
+        );
+        transferService.transfer(request, sender.getEmail());
+
+        assertThatThrownBy(() -> transferService.transfer(request, receiver.getEmail()))
+                .isInstanceOf(AccessDeniedException.class);
+
+        assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("Same idempotency key can be used by different owners without collision")
+    void transfer_sameIdempotencyKeyDifferentOwner_success() {
+        Account outsiderAccount = accountRepository.save(Account.builder()
+                .user(outsider)
+                .accountNumber("ACC-OUTSIDER")
+                .accountType(AccountType.PERSONAL)
+                .balance(new BigDecimal("1000000"))
+                .currency("VND")
+                .status(AccountStatus.ACTIVE)
+                .build());
+        em.flush();
+        String sameKey = UUID.randomUUID().toString();
+
+        var senderRequest = new TransferRequest(
+                senderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("100000"),
+                sameKey,
+                "VND",
+                "sender transfer"
+        );
+        var outsiderRequest = new TransferRequest(
+                outsiderAccount.getId().toString(),
+                receiverAccount.getId().toString(),
+                new BigDecimal("100000"),
+                sameKey,
+                "VND",
+                "outsider transfer"
+        );
+
+        var senderResponse = transferService.transfer(senderRequest, sender.getEmail());
+        var outsiderResponse = transferService.transfer(outsiderRequest, outsider.getEmail());
+
+        assertThat(outsiderResponse.id()).isNotEqualTo(senderResponse.id());
+        assertThat(transactionRepository.count()).isEqualTo(2);
+        assertThat(idempotencyRecordRepository.count()).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("Duplicated Idempotency key with different request -> IdempotencyConflictException")
     void transfer_duplicateIdempotencyKeyWithDifferentRequest_throwsConflict() {
         String sameKey = UUID.randomUUID().toString();

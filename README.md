@@ -101,14 +101,14 @@ src/main/resources/db/migration/
 
 ## Demo Accounts
 
-After running the seed migration, the following demo accounts are available:
+The seed migration creates disabled sample accounts for local data shape only. Do not use these as login credentials; create a user through `/api/v1/auth/register` or enable a local-only demo seed outside the production migration path.
 
 | Email                   | Password      | Role  | Note                     |
 | ----------------------- | ------------- | ----- | ------------------------ |
-| `admin@transfer.local`  | `password123` | ADMIN | Admin account            |
-| `user_a@transfer.local` | `password123` | USER  | Normal user              |
-| `user_b@transfer.local` | `password123` | USER  | Normal user              |
-| `user_c@transfer.local` | `password123` | USER  | User with frozen account |
+| `admin@transfer.local`  | Disabled | ADMIN | Sample admin account |
+| `user_a@transfer.local` | Disabled | USER  | Sample user account |
+| `user_b@transfer.local` | Disabled | USER  | Sample user account |
+| `user_c@transfer.local` | Disabled | USER  | Sample user with frozen account |
 
 ## Useful Commands
 

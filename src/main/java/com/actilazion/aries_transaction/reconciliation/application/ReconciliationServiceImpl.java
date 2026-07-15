@@ -1,6 +1,9 @@
 package com.actilazion.aries_transaction.reconciliation.application;
 
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
+import com.actilazion.aries_transaction.identity.domain.Role;
+import com.actilazion.aries_transaction.identity.domain.User;
+import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import com.actilazion.aries_transaction.reconciliation.domain.ReconciliationException;
 import com.actilazion.aries_transaction.reconciliation.domain.ReconciliationExceptionType;
 import com.actilazion.aries_transaction.reconciliation.domain.ReconciliationRun;
@@ -10,6 +13,7 @@ import com.actilazion.aries_transaction.reconciliation.infrastructure.Reconcilia
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,10 +31,17 @@ public class ReconciliationServiceImpl implements ReconciliationService {
     private final TransactionRepository transactionRepository;
     private final ReconciliationRunRepository reconciliationRunRepository;
     private final ReportingTransactionSnapshotClient reportingSnapshotClient;
+    private final UserRepository userRepository;
 
     @Override
     @Transactional
-    public ReconciliationRunResponse reconcile(String currency, OffsetDateTime windowStart, OffsetDateTime windowEnd) {
+    public ReconciliationRunResponse reconcile(
+            String currency,
+            OffsetDateTime windowStart,
+            OffsetDateTime windowEnd,
+            String initiatorEmail
+    ) {
+        assertPrivileged(initiatorEmail);
         if (!windowStart.isBefore(windowEnd)) {
             throw new IllegalArgumentException("windowStart must be before windowEnd");
         }
@@ -61,7 +72,8 @@ public class ReconciliationServiceImpl implements ReconciliationService {
 
     @Override
     @Transactional(readOnly = true)
-    public ReconciliationRunResponse getRun(UUID runId) {
+    public ReconciliationRunResponse getRun(UUID runId, String initiatorEmail) {
+        assertPrivileged(initiatorEmail);
         ReconciliationRun run = reconciliationRunRepository.findById(runId)
                 .orElseThrow(() -> new ResourceNotFoundException("ReconciliationRun", runId));
         return ReconciliationRunResponse.from(run);
@@ -184,5 +196,13 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                 .reportingStatus(reportingStatus)
                 .details(details)
                 .build();
+    }
+
+    private void assertPrivileged(String initiatorEmail) {
+        User initiator = userRepository.findByEmail(initiatorEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User", initiatorEmail));
+        if (initiator.getRole() != Role.ADMIN && initiator.getRole() != Role.OPERATOR) {
+            throw new AccessDeniedException("Caller is not authorized for reconciliation operations");
+        }
     }
 }

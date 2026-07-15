@@ -6,7 +6,12 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public interface ReconciliationService {
-    ReconciliationRunResponse reconcile(String currency, OffsetDateTime windowStart, OffsetDateTime windowEnd);
+    ReconciliationRunResponse reconcile(
+            String currency,
+            OffsetDateTime windowStart,
+            OffsetDateTime windowEnd,
+            String initiatorEmail
+    );
 
-    ReconciliationRunResponse getRun(UUID runId);
+    ReconciliationRunResponse getRun(UUID runId, String initiatorEmail);
 }

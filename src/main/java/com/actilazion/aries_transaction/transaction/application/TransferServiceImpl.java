@@ -1,17 +1,19 @@
 package com.actilazion.aries_transaction.transaction.application;
 
-import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
-import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
-import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
-import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import com.actilazion.aries_transaction.account.domain.Account;
-import com.actilazion.aries_transaction.transaction.domain.Transaction;
+import com.actilazion.aries_transaction.account.domain.AccountStatus;
+import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
+import com.actilazion.aries_transaction.audit.application.AuditLogService;
+import com.actilazion.aries_transaction.audit.domain.AuditEventType;
+import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
-import com.actilazion.aries_transaction.account.domain.AccountStatus;
-import com.actilazion.aries_transaction.audit.domain.AuditEventType;
+import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
+import com.actilazion.aries_transaction.ledger.application.LedgerService;
+import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecord;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecordStatus;
+import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStateGuard;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.domain.exception.AccountNotActiveException;
@@ -19,17 +21,13 @@ import com.actilazion.aries_transaction.transaction.domain.exception.CurrencyMis
 import com.actilazion.aries_transaction.transaction.domain.exception.DuplicateTransferException;
 import com.actilazion.aries_transaction.transaction.domain.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.transaction.domain.exception.InsufficientBalanceException;
-import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
 import com.actilazion.aries_transaction.transaction.domain.exception.RefundAmountExceededException;
 import com.actilazion.aries_transaction.transaction.domain.exception.SelfTransferException;
-import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
+import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
+import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
+import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
+import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
 import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
-import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
-import com.actilazion.aries_transaction.audit.application.AuditLogService;
-import com.actilazion.aries_transaction.transaction.application.IdempotencyService;
-import com.actilazion.aries_transaction.ledger.application.LedgerService;
-import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
-import com.actilazion.aries_transaction.transaction.application.TransferService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -46,6 +44,9 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class TransferServiceImpl implements TransferService {
+    private record LockedAccounts(Account from, Account to) {
+    }
+
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
     private final UserRepository userRepository;
@@ -57,15 +58,14 @@ public class TransferServiceImpl implements TransferService {
     @Override
     @Transactional
     public TransactionResponse transfer(TransferRequest request, String initiatorEmail) {
-        var existing = idempotencyService.findByKey(request.idempotencyKey());
+        var existing = idempotencyService.findTransferRecord(request, initiatorEmail);
         if (existing.isPresent()) {
             return responseForIdempotentRetry(existing.get(), request);
         }
 
-        IdempotencyRecord record = idempotencyService.createProcessingRecord(request);
+        IdempotencyRecord record = idempotencyService.createProcessingRecord(request, initiatorEmail);
         TransactionResponse response = doTransfer(request, initiatorEmail);
-        Transaction tx = transactionRepository.getReferenceById(response.id());
-        idempotencyService.markCompleted(record, tx, response);
+        completeIdempotencyRecord(record, response);
         return response;
     }
 
@@ -75,15 +75,14 @@ public class TransferServiceImpl implements TransferService {
         Transaction original = lockTransaction(originalTransactionId);
         User initiator = loadInitiator(initiatorEmail);
         assertCanReverse(initiator);
-        var existing = idempotencyService.findByKey(request.idempotencyKey());
+        var existing = idempotencyService.findReversalRecord(request, initiatorEmail);
         if (existing.isPresent()) {
             return responseForIdempotentRetry(existing.get(), request, original);
         }
 
-        IdempotencyRecord record = idempotencyService.createProcessingRecord(request, original);
+        IdempotencyRecord record = idempotencyService.createProcessingRecord(request, original, initiatorEmail);
         TransactionResponse response = doReverse(original, request, initiator);
-        Transaction tx = transactionRepository.getReferenceById(response.id());
-        idempotencyService.markCompleted(record, tx, response);
+        completeIdempotencyRecord(record, response);
         return response;
     }
 
@@ -93,15 +92,14 @@ public class TransferServiceImpl implements TransferService {
         Transaction original = lockTransaction(originalTransactionId);
         User initiator = loadInitiator(initiatorEmail);
         assertCanRefund(original, initiator);
-        var existing = idempotencyService.findByKey(request.idempotencyKey());
+        var existing = idempotencyService.findRefundRecord(request, initiatorEmail);
         if (existing.isPresent()) {
             return responseForIdempotentRetry(existing.get(), request, original);
         }
 
-        IdempotencyRecord record = idempotencyService.createProcessingRecord(request, original);
+        IdempotencyRecord record = idempotencyService.createProcessingRecord(request, original, initiatorEmail);
         TransactionResponse response = doRefund(original, request, initiator);
-        Transaction tx = transactionRepository.getReferenceById(response.id());
-        idempotencyService.markCompleted(record, tx, response);
+        completeIdempotencyRecord(record, response);
         return response;
     }
 
@@ -109,11 +107,7 @@ public class TransferServiceImpl implements TransferService {
         if (!idempotencyService.matchesRequest(record, request)) {
             throw new IdempotencyConflictException(request.idempotencyKey());
         }
-
-        if (record.getStatus() == IdempotencyRecordStatus.COMPLETED && record.getTransaction() != null) {
-            return TransactionResponse.from(record.getTransaction());
-        }
-        throw new DuplicateTransferException(request.idempotencyKey());
+        return responseForCompletedRetry(record, request.idempotencyKey());
     }
 
     private TransactionResponse responseForIdempotentRetry(
@@ -124,11 +118,7 @@ public class TransferServiceImpl implements TransferService {
         if (!idempotencyService.matchesRequest(record, request, original)) {
             throw new IdempotencyConflictException(request.idempotencyKey());
         }
-
-        if (record.getStatus() == IdempotencyRecordStatus.COMPLETED && record.getTransaction() != null) {
-            return TransactionResponse.from(record.getTransaction());
-        }
-        throw new DuplicateTransferException(request.idempotencyKey());
+        return responseForCompletedRetry(record, request.idempotencyKey());
     }
 
     private TransactionResponse responseForIdempotentRetry(
@@ -139,11 +129,19 @@ public class TransferServiceImpl implements TransferService {
         if (!idempotencyService.matchesRequest(record, request, original)) {
             throw new IdempotencyConflictException(request.idempotencyKey());
         }
+        return responseForCompletedRetry(record, request.idempotencyKey());
+    }
 
+    private TransactionResponse responseForCompletedRetry(IdempotencyRecord record, String idempotencyKey) {
         if (record.getStatus() == IdempotencyRecordStatus.COMPLETED && record.getTransaction() != null) {
             return TransactionResponse.from(record.getTransaction());
         }
-        throw new DuplicateTransferException(request.idempotencyKey());
+        throw new DuplicateTransferException(idempotencyKey);
+    }
+
+    private void completeIdempotencyRecord(IdempotencyRecord record, TransactionResponse response) {
+        Transaction tx = transactionRepository.getReferenceById(response.id());
+        idempotencyService.markCompleted(record, tx, response);
     }
 
     private TransactionResponse doTransfer(TransferRequest request, String initiatorEmail) {
@@ -154,15 +152,9 @@ public class TransferServiceImpl implements TransferService {
             throw new SelfTransferException("Self transfer is not allowed");
         }
 
-        Account fromAccount;
-        Account toAccount;
-        if (fromId.compareTo(toId) < 0) {
-            fromAccount = lockAccount(fromId);
-            toAccount = lockAccount(toId);
-        } else {
-            toAccount = lockAccount(toId);
-            fromAccount = lockAccount(fromId);
-        }
+        LockedAccounts accounts = lockAccounts(fromId, toId);
+        Account fromAccount = accounts.from();
+        Account toAccount = accounts.to();
 
         User initiator = loadInitiator(initiatorEmail);
         assertOwnsAccount(fromAccount, initiator);
@@ -208,27 +200,19 @@ public class TransferServiceImpl implements TransferService {
 
         Account fromAccount = original.getToAccount();
         Account toAccount = original.getFromAccount();
-        Account lockedFromAccount;
-        Account lockedToAccount;
-        if (fromAccount.getId().compareTo(toAccount.getId()) < 0) {
-            lockedFromAccount = lockAccount(fromAccount.getId());
-            lockedToAccount = lockAccount(toAccount.getId());
-        } else {
-            lockedToAccount = lockAccount(toAccount.getId());
-            lockedFromAccount = lockAccount(fromAccount.getId());
-        }
+        LockedAccounts lockedAccounts = lockAccounts(fromAccount.getId(), toAccount.getId());
 
         Transaction tx = createCompensatingTransaction(
                 original,
-                lockedFromAccount,
-                lockedToAccount,
+                lockedAccounts.from(),
+                lockedAccounts.to(),
                 original.getAmount(),
                 request.idempotencyKey(),
                 request.description(),
                 initiator
         );
 
-        moveBalance(lockedFromAccount, lockedToAccount, original.getAmount());
+        moveBalance(lockedAccounts.from(), lockedAccounts.to(), original.getAmount());
         original.markReversed();
         transactionRepository.save(original);
         tx.markCompleted(OffsetDateTime.now());
@@ -256,27 +240,19 @@ public class TransferServiceImpl implements TransferService {
 
         Account fromAccount = original.getToAccount();
         Account toAccount = original.getFromAccount();
-        Account lockedFromAccount;
-        Account lockedToAccount;
-        if (fromAccount.getId().compareTo(toAccount.getId()) < 0) {
-            lockedFromAccount = lockAccount(fromAccount.getId());
-            lockedToAccount = lockAccount(toAccount.getId());
-        } else {
-            lockedToAccount = lockAccount(toAccount.getId());
-            lockedFromAccount = lockAccount(fromAccount.getId());
-        }
+        LockedAccounts lockedAccounts = lockAccounts(fromAccount.getId(), toAccount.getId());
 
         Transaction tx = createCompensatingTransaction(
                 original,
-                lockedFromAccount,
-                lockedToAccount,
+                lockedAccounts.from(),
+                lockedAccounts.to(),
                 request.amount(),
                 request.idempotencyKey(),
                 request.description(),
                 initiator
         );
 
-        moveBalance(lockedFromAccount, lockedToAccount, request.amount());
+        moveBalance(lockedAccounts.from(), lockedAccounts.to(), request.amount());
         BigDecimal refundedAmount = alreadyRefunded.add(request.amount());
         original.setRefundedAmount(refundedAmount);
         if (refundedAmount.compareTo(original.getAmount()) == 0) {
@@ -334,10 +310,6 @@ public class TransferServiceImpl implements TransferService {
         }
     }
 
-    private void assertOwnsOriginalSourceAccount(Transaction original, User initiator) {
-        assertOwnsAccount(original.getFromAccount(), initiator);
-    }
-
     private void assertCanReverse(User initiator) {
         if (initiator.getRole() != Role.ADMIN && initiator.getRole() != Role.OPERATOR) {
             throw new AccessDeniedException("Caller is not authorized to reverse transactions");
@@ -349,7 +321,7 @@ public class TransferServiceImpl implements TransferService {
             return;
         }
         if (initiator.getRole() == Role.MERCHANT) {
-            assertOwnsOriginalSourceAccount(original, initiator);
+            assertOwnsAccount(original.getFromAccount(), initiator);
             return;
         }
         throw new AccessDeniedException("Caller is not authorized to refund transactions");
@@ -412,6 +384,15 @@ public class TransferServiceImpl implements TransferService {
     private Account lockAccount(UUID accountId) {
         return accountRepository.findByIdWithLock(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
+    }
+
+    private LockedAccounts lockAccounts(UUID fromId, UUID toId) {
+        if (fromId.compareTo(toId) < 0) {
+            return new LockedAccounts(lockAccount(fromId), lockAccount(toId));
+        }
+        Account toAccount = lockAccount(toId);
+        Account fromAccount = lockAccount(fromId);
+        return new LockedAccounts(fromAccount, toAccount);
     }
 
     private Transaction lockTransaction(UUID transactionId) {

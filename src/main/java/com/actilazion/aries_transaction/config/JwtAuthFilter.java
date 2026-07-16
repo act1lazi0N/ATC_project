@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -19,6 +20,7 @@ import java.io.IOException;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
@@ -39,18 +41,43 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         try {
             userEmail = jwtService.extractUsername(jwt);
         } catch (Exception e) {
-            filterChain.doFilter(request, response);
+            log.debug("JWT subject extraction failed: {}", e.getClass().getSimpleName());
+            reject(response);
             return;
         }
 
         if (userEmail != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
-            if (jwtService.isTokenValid(jwt, userDetails)) {
+            try {
+                UserDetails userDetails = userDetailsService.loadUserByUsername(userEmail);
+                if (!isAccountUsable(userDetails) || !jwtService.isTokenValid(jwt, userDetails)) {
+                    reject(response);
+                    return;
+                }
+
                 UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                 authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authToken);
+                log.trace("JWT authentication succeeded for authorities={}", userDetails.getAuthorities());
+            } catch (Exception e) {
+                log.debug("JWT authentication failed: {}", e.getClass().getSimpleName());
+                reject(response);
+                return;
             }
         }
         filterChain.doFilter(request, response);
+    }
+
+    private boolean isAccountUsable(UserDetails userDetails) {
+        return userDetails.isEnabled()
+                && userDetails.isAccountNonExpired()
+                && userDetails.isAccountNonLocked()
+                && userDetails.isCredentialsNonExpired();
+    }
+
+    private void reject(HttpServletResponse response) throws IOException {
+        SecurityContextHolder.clearContext();
+        response.setHeader("WWW-Authenticate", "Bearer");
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.flushBuffer();
     }
 }

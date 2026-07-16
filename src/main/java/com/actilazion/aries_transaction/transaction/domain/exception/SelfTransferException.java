@@ -1,9 +1,10 @@
 package com.actilazion.aries_transaction.transaction.domain.exception;
 
-
 import com.actilazion.aries_transaction.common.exception.AppException;
-public class SelfTransferException extends RuntimeException {
+import org.springframework.http.HttpStatus;
+
+public class SelfTransferException extends AppException {
     public SelfTransferException(String message) {
-        super(message);
+        super(message, HttpStatus.BAD_REQUEST);
     }
 }

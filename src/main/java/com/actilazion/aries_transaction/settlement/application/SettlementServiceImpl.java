@@ -3,6 +3,9 @@ package com.actilazion.aries_transaction.settlement.application;
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
+import com.actilazion.aries_transaction.identity.domain.Role;
+import com.actilazion.aries_transaction.identity.domain.User;
+import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import com.actilazion.aries_transaction.ledger.application.LedgerService;
 import com.actilazion.aries_transaction.settlement.domain.PayoutStatus;
 import com.actilazion.aries_transaction.settlement.domain.SettlementBatch;
@@ -16,6 +19,7 @@ import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -36,6 +40,7 @@ public class SettlementServiceImpl implements SettlementService {
     private final TransactionRepository transactionRepository;
     private final SettlementBatchRepository settlementBatchRepository;
     private final AccountRepository accountRepository;
+    private final UserRepository userRepository;
     private final LedgerService ledgerService;
 
     @Override
@@ -44,8 +49,10 @@ public class SettlementServiceImpl implements SettlementService {
             String currency,
             int feeRateBps,
             String idempotencyKey,
-            OffsetDateTime cutoffCompletedAt
+            OffsetDateTime cutoffCompletedAt,
+            String initiatorEmail
     ) {
+        assertPrivileged(initiatorEmail);
         String normalizedCurrency = currency.toUpperCase(Locale.ROOT);
         var existing = settlementBatchRepository.findByIdempotencyKey(idempotencyKey);
         if (existing.isPresent()) {
@@ -110,7 +117,8 @@ public class SettlementServiceImpl implements SettlementService {
 
     @Override
     @Transactional(readOnly = true)
-    public SettlementBatchResponse getBatch(UUID batchId) {
+    public SettlementBatchResponse getBatch(UUID batchId, String initiatorEmail) {
+        assertPrivileged(initiatorEmail);
         SettlementBatch batch = settlementBatchRepository.findById(batchId)
                 .orElseThrow(() -> new ResourceNotFoundException("SettlementBatch", batchId));
         return SettlementBatchResponse.from(batch);
@@ -155,5 +163,13 @@ public class SettlementServiceImpl implements SettlementService {
         String accountNumber = prefix + "-" + currency;
         return accountRepository.findByAccountNumber(accountNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("SettlementAccount", accountNumber));
+    }
+
+    private void assertPrivileged(String initiatorEmail) {
+        User initiator = userRepository.findByEmail(initiatorEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User", initiatorEmail));
+        if (initiator.getRole() != Role.ADMIN && initiator.getRole() != Role.OPERATOR) {
+            throw new AccessDeniedException("Caller is not authorized for settlement operations");
+        }
     }
 }

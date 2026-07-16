@@ -24,27 +24,76 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class IdempotencyService {
+    private static final String TRANSFER_OPERATION = "TRANSFER";
+    private static final String REVERSAL_OPERATION = "REVERSAL";
+    private static final String REFUND_OPERATION = "REFUND";
+
     private final IdempotencyRecordRepository idempotencyRecordRepository;
 
     public Optional<IdempotencyRecord> findByKey(String idempotencyKey) {
         return idempotencyRecordRepository.findByIdempotencyKey(idempotencyKey);
     }
 
-    public IdempotencyRecord createProcessingRecord(TransferRequest request) {
-        return createProcessingRecord(request.idempotencyKey(), hash(request));
+    public Optional<IdempotencyRecord> findTransferRecord(TransferRequest request, String initiatorEmail) {
+        return findByScope(request.idempotencyKey(), TRANSFER_OPERATION, initiatorEmail);
     }
 
-    public IdempotencyRecord createProcessingRecord(ReversalRequest request, Transaction originalTransaction) {
-        return createProcessingRecord(request.idempotencyKey(), hash(request, originalTransaction));
+    public Optional<IdempotencyRecord> findReversalRecord(ReversalRequest request, String initiatorEmail) {
+        return findByScope(request.idempotencyKey(), REVERSAL_OPERATION, initiatorEmail);
     }
 
-    public IdempotencyRecord createProcessingRecord(RefundRequest request, Transaction originalTransaction) {
-        return createProcessingRecord(request.idempotencyKey(), hash(request, originalTransaction));
+    public Optional<IdempotencyRecord> findRefundRecord(RefundRequest request, String initiatorEmail) {
+        return findByScope(request.idempotencyKey(), REFUND_OPERATION, initiatorEmail);
     }
 
-    private IdempotencyRecord createProcessingRecord(String idempotencyKey, String requestHash) {
+    private Optional<IdempotencyRecord> findByScope(String idempotencyKey, String operation, String initiatorEmail) {
+        return idempotencyRecordRepository.findByIdempotencyKeyAndOperationAndInitiatorEmail(
+                idempotencyKey,
+                operation,
+                initiatorEmail
+        );
+    }
+
+    public IdempotencyRecord createProcessingRecord(TransferRequest request, String initiatorEmail) {
+        return createProcessingRecord(request.idempotencyKey(), TRANSFER_OPERATION, initiatorEmail, hash(request));
+    }
+
+    public IdempotencyRecord createProcessingRecord(
+            ReversalRequest request,
+            Transaction originalTransaction,
+            String initiatorEmail
+    ) {
+        return createProcessingRecord(
+                request.idempotencyKey(),
+                REVERSAL_OPERATION,
+                initiatorEmail,
+                hash(request, originalTransaction)
+        );
+    }
+
+    public IdempotencyRecord createProcessingRecord(
+            RefundRequest request,
+            Transaction originalTransaction,
+            String initiatorEmail
+    ) {
+        return createProcessingRecord(
+                request.idempotencyKey(),
+                REFUND_OPERATION,
+                initiatorEmail,
+                hash(request, originalTransaction)
+        );
+    }
+
+    private IdempotencyRecord createProcessingRecord(
+            String idempotencyKey,
+            String operation,
+            String initiatorEmail,
+            String requestHash
+    ) {
         IdempotencyRecord record = IdempotencyRecord.builder()
                 .idempotencyKey(idempotencyKey)
+                .operation(operation)
+                .initiatorEmail(initiatorEmail)
                 .requestHash(requestHash)
                 .status(IdempotencyRecordStatus.PROCESSING)
                 .build();

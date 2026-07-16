@@ -136,16 +136,18 @@ class TransferControllerTest {
         UUID transactionId = UUID.randomUUID();
         UUID fromAccountId = UUID.randomUUID();
         UUID toAccountId = UUID.randomUUID();
+        UserDetails principal = principal("sender@test.com");
 
-        when(transferService.getById(transactionId))
+        when(transferService.getById(transactionId, "sender@test.com"))
                 .thenReturn(response(transactionId, fromAccountId, toAccountId, "1000000", TransactionStatus.COMPLETED));
 
-        var result = transferController.getById(transactionId);
+        var result = transferController.getById(transactionId, principal);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isNotNull();
         assertThat(result.getBody().getMessage()).isEqualTo("Transaction detail");
         assertThat(result.getBody().getData().id()).isEqualTo(transactionId);
+        verify(transferService).getById(transactionId, "sender@test.com");
     }
 
     @Test
@@ -160,17 +162,19 @@ class TransferControllerTest {
                 TransactionStatus.COMPLETED
         );
         PageRequest pageable = PageRequest.of(0, 20);
+        UserDetails principal = principal("sender@test.com");
 
-        when(transferService.getByAccount(eq(accountId), any()))
+        when(transferService.getByAccount(eq(accountId), any(), eq("sender@test.com")))
                 .thenReturn(new PageImpl<>(List.of(transaction), pageable, 1));
 
-        var result = transferController.getByAccount(accountId, pageable);
+        var result = transferController.getByAccount(accountId, pageable, principal);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isNotNull();
         assertThat(result.getBody().getMessage()).isEqualTo("Transaction history");
         assertThat(result.getBody().getData().getContent()).extracting(TransactionResponse::id)
                 .containsExactly(transactionId);
+        verify(transferService).getByAccount(eq(accountId), any(), eq("sender@test.com"));
     }
 
     private UserDetails principal(String username) {

@@ -29,6 +29,9 @@ logging:
 jwt:
   secret: dGhpcyBpcyBhIHZlcnkgbG9uZyBzZWNyZXQga2V5IGZvciB0ZXN0cw==
   expiration: 86400
+  issuer: aries-transaction
+  audience: aries-transaction-api
+  token-type: access
 
 app:
   outbox:

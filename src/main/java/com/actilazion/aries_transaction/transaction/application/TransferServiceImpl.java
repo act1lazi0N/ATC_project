@@ -321,7 +321,7 @@ public class TransferServiceImpl implements TransferService {
             return;
         }
         if (initiator.getRole() == Role.MERCHANT) {
-            assertOwnsAccount(original.getFromAccount(), initiator);
+            assertOwnsAccount(original.getToAccount(), initiator);
             return;
         }
         throw new AccessDeniedException("Caller is not authorized to refund transactions");

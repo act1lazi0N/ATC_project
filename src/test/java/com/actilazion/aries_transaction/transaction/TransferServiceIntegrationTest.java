@@ -81,8 +81,10 @@ public class TransferServiceIntegrationTest {
     private User operator;
     private User admin;
     private User outsider;
+    private User merchantReceiver;
     private Account senderAccount;
     private Account receiverAccount;
+    private Account merchantReceiverAccount;
 
     @BeforeEach
     void setUp() {
@@ -121,6 +123,13 @@ public class TransferServiceIntegrationTest {
                 .role(Role.USER)
                 .build());
 
+        merchantReceiver = userRepository.save(User.builder()
+                .fullName("Merchant Receiver")
+                .email("merchant-receiver@test.com")
+                .passwordHash("hashed")
+                .role(Role.MERCHANT)
+                .build());
+
         senderAccount = accountRepository.save(Account.builder()
                 .user(sender)
                 .accountNumber("ACC-001")
@@ -134,6 +143,15 @@ public class TransferServiceIntegrationTest {
                 .user(receiver)
                 .accountNumber("ACC-002")
                 .accountType(AccountType.PERSONAL)
+                .balance(new BigDecimal("1000000"))
+                .currency("VND")
+                .status(AccountStatus.ACTIVE)
+                .build());
+
+        merchantReceiverAccount = accountRepository.save(Account.builder()
+                .user(merchantReceiver)
+                .accountNumber("ACC-003")
+                .accountType(AccountType.BUSINESS)
                 .balance(new BigDecimal("1000000"))
                 .currency("VND")
                 .status(AccountStatus.ACTIVE)
@@ -782,7 +800,7 @@ public class TransferServiceIntegrationTest {
         var partialRefund = transferService.refund(
                 transfer.id(),
                 new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), "Partial refund"),
-                sender.getEmail()
+                operator.getEmail()
         );
 
         em.flush();
@@ -800,7 +818,7 @@ public class TransferServiceIntegrationTest {
         var fullRefund = transferService.refund(
                 transfer.id(),
                 new RefundRequest(new BigDecimal("600000"), UUID.randomUUID().toString(), "Remaining refund"),
-                sender.getEmail()
+                operator.getEmail()
         );
 
         em.flush();
@@ -837,6 +855,56 @@ public class TransferServiceIntegrationTest {
         var original = transactionRepository.findById(transfer.id()).orElseThrow();
         assertThat(original.getStatus()).isEqualTo(TransactionStatus.PARTIALLY_REFUNDED);
         assertThat(original.getRefundedAmount()).isEqualByComparingTo("400000");
+    }
+
+    @Test
+    @DisplayName("Merchant can refund only from an account they own")
+    void refund_merchantOwnsRefundSource_success() {
+        var transfer = transferService.transfer(transferToMerchantReceiverRequest("1000000"), sender.getEmail());
+
+        var refund = transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), "Merchant refund"),
+                merchantReceiver.getEmail()
+        );
+
+        em.flush();
+        em.clear();
+
+        assertThat(refund.status()).isEqualTo(TransactionStatus.COMPLETED);
+        var original = transactionRepository.findById(transfer.id()).orElseThrow();
+        assertThat(original.getStatus()).isEqualTo(TransactionStatus.PARTIALLY_REFUNDED);
+        assertThat(original.getRefundedAmount()).isEqualByComparingTo("400000");
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("4400000");
+        assertThat(accountRepository.findById(merchantReceiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1600000");
+    }
+
+    @Test
+    @DisplayName("Merchant cannot refund by debiting another user's account")
+    void refund_merchantDoesNotOwnRefundSource_throwsAccessDenied() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        assertThatThrownBy(() -> transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), "Unauthorized refund"),
+                sender.getEmail()
+        )).isInstanceOf(AccessDeniedException.class);
+
+        em.flush();
+        em.clear();
+
+        var original = transactionRepository.findById(transfer.id()).orElseThrow();
+        assertThat(original.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(original.getRefundedAmount()).isEqualByComparingTo("0");
+        assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(2);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("4000000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("2000000");
     }
 
     @Test
@@ -894,13 +962,13 @@ public class TransferServiceIntegrationTest {
         transferService.refund(
                 transfer.id(),
                 new RefundRequest(new BigDecimal("400000"), UUID.randomUUID().toString(), null),
-                sender.getEmail()
+                operator.getEmail()
         );
 
         assertThatThrownBy(() -> transferService.refund(
                 transfer.id(),
                 new RefundRequest(new BigDecimal("700000"), UUID.randomUUID().toString(), null),
-                sender.getEmail()
+                operator.getEmail()
         )).isInstanceOf(RefundAmountExceededException.class);
 
         var original = transactionRepository.findById(transfer.id()).orElseThrow();
@@ -918,8 +986,8 @@ public class TransferServiceIntegrationTest {
         String sameKey = UUID.randomUUID().toString();
         var request = new RefundRequest(new BigDecimal("400000"), sameKey, "Refund once");
 
-        var firstResponse = transferService.refund(transfer.id(), request, sender.getEmail());
-        var secondResponse = transferService.refund(transfer.id(), request, sender.getEmail());
+        var firstResponse = transferService.refund(transfer.id(), request, operator.getEmail());
+        var secondResponse = transferService.refund(transfer.id(), request, operator.getEmail());
 
         assertThat(secondResponse).isEqualTo(firstResponse);
         assertThat(transactionRepository.count()).isEqualTo(2);
@@ -941,13 +1009,13 @@ public class TransferServiceIntegrationTest {
         transferService.refund(
                 transfer.id(),
                 new RefundRequest(new BigDecimal("400000"), sameKey, "Refund once"),
-                sender.getEmail()
+                operator.getEmail()
         );
 
         assertThatThrownBy(() -> transferService.refund(
                 transfer.id(),
                 new RefundRequest(new BigDecimal("500000"), sameKey, "Refund once"),
-                sender.getEmail()
+                operator.getEmail()
         )).isInstanceOf(IdempotencyConflictException.class);
 
         assertThat(transactionRepository.count()).isEqualTo(2);
@@ -973,7 +1041,7 @@ public class TransferServiceIntegrationTest {
             assertThatThrownBy(() -> transferService.refund(
                     tx.getId(),
                     new RefundRequest(new BigDecimal("100000"), idempotencyKey, null),
-                    sender.getEmail()
+                    operator.getEmail()
             )).isInstanceOf(InvalidTransactionStateTransitionException.class);
         }
     }
@@ -991,7 +1059,7 @@ public class TransferServiceIntegrationTest {
         assertThatThrownBy(() -> transferService.refund(
                 transfer.id(),
                 new RefundRequest(new BigDecimal("400000"), idempotencyKey, null),
-                sender.getEmail()
+                operator.getEmail()
         )).isInstanceOf(AccountNotActiveException.class);
 
         assertThat(transactionRepository.count()).isEqualTo(1);
@@ -1012,7 +1080,7 @@ public class TransferServiceIntegrationTest {
         assertThatThrownBy(() -> transferService.refund(
                 transfer.id(),
                 new RefundRequest(new BigDecimal("400000"), idempotencyKey, null),
-                sender.getEmail()
+                operator.getEmail()
         )).isInstanceOf(InsufficientBalanceException.class);
 
         assertThat(transactionRepository.count()).isEqualTo(1);
@@ -1088,6 +1156,17 @@ public class TransferServiceIntegrationTest {
         return new TransferRequest(
                 senderAccount.getId().toString(),
                 receiverAccount.getId().toString(),
+                new BigDecimal(amount),
+                UUID.randomUUID().toString(),
+                "VND",
+                null
+        );
+    }
+
+    private TransferRequest transferToMerchantReceiverRequest(String amount) {
+        return new TransferRequest(
+                senderAccount.getId().toString(),
+                merchantReceiverAccount.getId().toString(),
                 new BigDecimal(amount),
                 UUID.randomUUID().toString(),
                 "VND",

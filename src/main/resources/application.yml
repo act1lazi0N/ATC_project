@@ -53,7 +53,7 @@ app:
 
 logging:
   level:
-    com.actilazion.aries_transaction: DEBUG
+    com.actilazion.aries_transaction: INFO
     org.springframework.security: INFO
     org.hibernate.SQL: WARN
 

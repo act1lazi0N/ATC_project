@@ -335,14 +335,6 @@ public class TransferServiceIntegrationTest {
     @DisplayName("Outsider cannot read transaction detail")
     void getById_outsiderForbidden() {
         var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
-        User outsider = userRepository.save(User.builder()
-                .fullName("Outsider")
-                .email("outsider@test.com")
-                .passwordHash("hashed")
-                .role(Role.USER)
-                .build());
-        em.flush();
-        em.clear();
 
         assertThatThrownBy(() -> transferService.getById(transfer.id(), outsider.getEmail()))
                 .isInstanceOf(ForbiddenOperationException.class);
@@ -352,14 +344,6 @@ public class TransferServiceIntegrationTest {
     @DisplayName("Admin can read transaction detail")
     void getById_adminCanRead() {
         var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
-        User admin = userRepository.save(User.builder()
-                .fullName("Admin")
-                .email("admin@test.com")
-                .passwordHash("hashed")
-                .role(Role.ADMIN)
-                .build());
-        em.flush();
-        em.clear();
 
         var response = transferService.getById(transfer.id(), admin.getEmail());
 

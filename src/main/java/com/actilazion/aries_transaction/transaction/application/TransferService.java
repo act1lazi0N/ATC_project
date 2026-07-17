@@ -16,7 +16,7 @@ public interface TransferService {
 
     TransactionResponse refund(UUID originalTransactionId, RefundRequest request, String initiatorEmail);
 
-    TransactionResponse getById(UUID txId, String viewerEmail);
+    TransactionResponse getById(UUID txId, String requesterEmail);
 
-    Page<TransactionResponse> getByAccount(UUID accountId, Pageable pageable, String viewerEmail);
+    Page<TransactionResponse> getByAccount(UUID accountId, Pageable pageable, String requesterEmail);
 }

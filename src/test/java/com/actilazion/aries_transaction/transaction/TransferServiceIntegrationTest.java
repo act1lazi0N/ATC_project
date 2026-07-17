@@ -23,6 +23,7 @@ import com.actilazion.aries_transaction.transaction.domain.exception.Insufficien
 import com.actilazion.aries_transaction.transaction.domain.exception.InvalidTransactionStateTransitionException;
 import com.actilazion.aries_transaction.transaction.domain.exception.RefundAmountExceededException;
 import com.actilazion.aries_transaction.transaction.domain.exception.SelfTransferException;
+import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
 import com.actilazion.aries_transaction.audit.application.AuditLogService;
 import com.actilazion.aries_transaction.ledger.application.LedgerService;
 import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
@@ -318,6 +319,82 @@ public class TransferServiceIntegrationTest {
         assertThat(logs).hasSize(2);
         assertThat(logs.stream().map(l -> l.getEventType().name()))
                 .containsExactlyInAnyOrder("TRANSFER_INITIATED", "TRANSFER_COMPLETED");
+    }
+
+    @Test
+    @DisplayName("Participant can read transaction detail")
+    void getById_participantCanRead() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        var response = transferService.getById(transfer.id(), "receiver@test.com");
+
+        assertThat(response.id()).isEqualTo(transfer.id());
+    }
+
+    @Test
+    @DisplayName("Outsider cannot read transaction detail")
+    void getById_outsiderForbidden() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        User outsider = userRepository.save(User.builder()
+                .fullName("Outsider")
+                .email("outsider@test.com")
+                .passwordHash("hashed")
+                .role(Role.USER)
+                .build());
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> transferService.getById(transfer.id(), outsider.getEmail()))
+                .isInstanceOf(ForbiddenOperationException.class);
+    }
+
+    @Test
+    @DisplayName("Admin can read transaction detail")
+    void getById_adminCanRead() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        User admin = userRepository.save(User.builder()
+                .fullName("Admin")
+                .email("admin@test.com")
+                .passwordHash("hashed")
+                .role(Role.ADMIN)
+                .build());
+        em.flush();
+        em.clear();
+
+        var response = transferService.getById(transfer.id(), admin.getEmail());
+
+        assertThat(response.id()).isEqualTo(transfer.id());
+    }
+
+    @Test
+    @DisplayName("Account owner can read own account transaction history")
+    void getByAccount_ownerCanRead() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+
+        var response = transferService.getByAccount(receiverAccount.getId(), org.springframework.data.domain.PageRequest.of(0, 20), "receiver@test.com");
+
+        assertThat(response.getContent()).extracting(transaction -> transaction.id())
+                .contains(transfer.id());
+    }
+
+    @Test
+    @DisplayName("Outsider cannot read account transaction history")
+    void getByAccount_outsiderForbidden() {
+        transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        User outsider = userRepository.save(User.builder()
+                .fullName("Outsider")
+                .email("outsider-history@test.com")
+                .passwordHash("hashed")
+                .role(Role.USER)
+                .build());
+        em.flush();
+        em.clear();
+
+        assertThatThrownBy(() -> transferService.getByAccount(
+                receiverAccount.getId(),
+                org.springframework.data.domain.PageRequest.of(0, 20),
+                outsider.getEmail()
+        )).isInstanceOf(ForbiddenOperationException.class);
     }
 
     @Test

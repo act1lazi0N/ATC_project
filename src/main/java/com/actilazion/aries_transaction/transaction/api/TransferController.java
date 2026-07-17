@@ -67,7 +67,10 @@ public class TransferController {
             @PathVariable("id") UUID id,
             @AuthenticationPrincipal UserDetails userDetails
     ) {
-        return ResponseEntity.ok(ApiResponse.ok("Transaction detail", transferService.getById(id, userDetails.getUsername())));
+        return ResponseEntity.ok(ApiResponse.ok(
+                "Transaction detail",
+                transferService.getById(id, userDetails.getUsername())
+        ));
     }
 
     @GetMapping("/account/{accountId}")
@@ -77,6 +80,9 @@ public class TransferController {
             @PageableDefault(size = 20, sort = "createdAt")Pageable pageable,
             @AuthenticationPrincipal UserDetails userDetails
             ) {
-        return ResponseEntity.ok(ApiResponse.ok("Transaction history", transferService.getByAccount(accountId, pageable, userDetails.getUsername())));
+        return ResponseEntity.ok(ApiResponse.ok(
+                "Transaction history",
+                transferService.getByAccount(accountId, pageable, userDetails.getUsername())
+        ));
     }
 }

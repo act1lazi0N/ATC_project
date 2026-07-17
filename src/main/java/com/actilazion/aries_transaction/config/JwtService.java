@@ -2,7 +2,6 @@ package com.actilazion.aries_transaction.config;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
@@ -10,13 +9,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
-import javax.crypto.SecretKey;
-import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.function.Function;
+import javax.crypto.SecretKey;
 
-import static io.jsonwebtoken.Jwts.*;
+import static io.jsonwebtoken.Jwts.builder;
+import static io.jsonwebtoken.Jwts.parser;
 
 @Service
 @RequiredArgsConstructor
@@ -49,14 +48,11 @@ public class JwtService {
     public String generateToken(HashMap<String, Object> claims, UserDetails userDetails) {
         long nowMs = System.currentTimeMillis();
         return builder()
-                .setClaims(claims)
-                .setSubject(userDetails.getUsername())
-                .setIssuer(jwtConfig.getIssuer())
-                .setAudience(jwtConfig.getAudience())
-                .setIssuedAt(new Date(nowMs))
-                .setExpiration(new Date(nowMs + jwtConfig.getExpiration() * 1000))
-                .claim(TOKEN_TYPE_CLAIM, jwtConfig.getTokenType())
-                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .claims(claims)
+                .subject(userDetails.getUsername())
+                .issuedAt(new Date(nowMs))
+                .expiration(new Date(nowMs + jwtConfig.getExpiration() * 1000))
+                .signWith(getSigningKey(), Jwts.SIG.HS256)
                 .compact();
     }
 
@@ -65,12 +61,11 @@ public class JwtService {
     }
 
     private <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
-        final Claims claims = Jwts.parser()
-                .setSigningKey(getSigningKey())
+        final Claims claims = parser()
+                .verifyWith(getSigningKey())
                 .build()
-                .parseClaimsJws(token)
-                .getBody();
-        validateClaims(claims);
+                .parseSignedClaims(token)
+                .getPayload();
         return claimsResolver.apply(claims);
     }
 

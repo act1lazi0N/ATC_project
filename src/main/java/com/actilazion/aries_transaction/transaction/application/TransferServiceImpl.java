@@ -21,13 +21,17 @@ import com.actilazion.aries_transaction.transaction.domain.exception.CurrencyMis
 import com.actilazion.aries_transaction.transaction.domain.exception.DuplicateTransferException;
 import com.actilazion.aries_transaction.transaction.domain.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.transaction.domain.exception.InsufficientBalanceException;
+import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
+import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
 import com.actilazion.aries_transaction.transaction.domain.exception.RefundAmountExceededException;
 import com.actilazion.aries_transaction.transaction.domain.exception.SelfTransferException;
-import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
-import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
-import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
-import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
+import com.actilazion.aries_transaction.identity.domain.Role;
+import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
 import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
+import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
+import com.actilazion.aries_transaction.audit.application.AuditLogService;
+import com.actilazion.aries_transaction.ledger.application.LedgerService;
+import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -152,9 +156,9 @@ public class TransferServiceImpl implements TransferService {
             throw new SelfTransferException("Self transfer is not allowed");
         }
 
-        LockedAccounts accounts = lockAccounts(fromId, toId);
-        Account fromAccount = accounts.from();
-        Account toAccount = accounts.to();
+        AccountPair accounts = lockAccountPair(fromId, toId);
+        Account fromAccount = accounts.fromAccount();
+        Account toAccount = accounts.toAccount();
 
         User initiator = loadInitiator(initiatorEmail);
         assertOwnsAccount(fromAccount, initiator);
@@ -198,9 +202,12 @@ public class TransferServiceImpl implements TransferService {
     private TransactionResponse doReverse(Transaction original, ReversalRequest request, User initiator) {
         TransactionStateGuard.assertCanReverse(original);
 
-        Account fromAccount = original.getToAccount();
-        Account toAccount = original.getFromAccount();
-        LockedAccounts lockedAccounts = lockAccounts(fromAccount.getId(), toAccount.getId());
+        AccountPair accounts = lockAccountPair(
+                original.getToAccount().getId(),
+                original.getFromAccount().getId()
+        );
+        Account lockedFromAccount = accounts.fromAccount();
+        Account lockedToAccount = accounts.toAccount();
 
         Transaction tx = createCompensatingTransaction(
                 original,
@@ -238,9 +245,12 @@ public class TransferServiceImpl implements TransferService {
             throw new RefundAmountExceededException(request.amount(), remaining);
         }
 
-        Account fromAccount = original.getToAccount();
-        Account toAccount = original.getFromAccount();
-        LockedAccounts lockedAccounts = lockAccounts(fromAccount.getId(), toAccount.getId());
+        AccountPair accounts = lockAccountPair(
+                original.getToAccount().getId(),
+                original.getFromAccount().getId()
+        );
+        Account lockedFromAccount = accounts.fromAccount();
+        Account lockedToAccount = accounts.toAccount();
 
         Transaction tx = createCompensatingTransaction(
                 original,
@@ -361,21 +371,19 @@ public class TransferServiceImpl implements TransferService {
 
     @Override
     @Transactional(readOnly = true)
-    public TransactionResponse getById(UUID txId, String viewerEmail) {
+    public TransactionResponse getById(UUID txId, String requesterEmail) {
         Transaction tx = transactionRepository.findById(txId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transaction", txId));
-        User viewer = loadInitiator(viewerEmail);
-        assertCanViewTransaction(tx, viewer);
+        assertCanReadTransaction(tx, requesterEmail);
         return TransactionResponse.from(tx);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<TransactionResponse> getByAccount(UUID accountId, Pageable pageable, String viewerEmail) {
+    public Page<TransactionResponse> getByAccount(UUID accountId, Pageable pageable, String requesterEmail) {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
-        User viewer = loadInitiator(viewerEmail);
-        assertCanViewAccount(account, viewer);
+        assertCanReadAccount(account, requesterEmail);
         return transactionRepository
                 .findAllByAccountId(accountId, pageable)
                 .map(TransactionResponse::from);
@@ -386,13 +394,46 @@ public class TransferServiceImpl implements TransferService {
                 .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
     }
 
-    private LockedAccounts lockAccounts(UUID fromId, UUID toId) {
-        if (fromId.compareTo(toId) < 0) {
-            return new LockedAccounts(lockAccount(fromId), lockAccount(toId));
+    private AccountPair lockAccountPair(UUID fromAccountId, UUID toAccountId) {
+        Account fromAccount;
+        Account toAccount;
+        if (fromAccountId.compareTo(toAccountId) < 0) {
+            fromAccount = lockAccount(fromAccountId);
+            toAccount = lockAccount(toAccountId);
+        } else {
+            toAccount = lockAccount(toAccountId);
+            fromAccount = lockAccount(fromAccountId);
         }
-        Account toAccount = lockAccount(toId);
-        Account fromAccount = lockAccount(fromId);
-        return new LockedAccounts(fromAccount, toAccount);
+        return new AccountPair(fromAccount, toAccount);
+    }
+
+    private record AccountPair(Account fromAccount, Account toAccount) {
+    }
+
+    private void assertCanReadTransaction(Transaction tx, String requesterEmail) {
+        if (isAdmin(requesterEmail)
+                || isAccountOwner(tx.getFromAccount(), requesterEmail)
+                || isAccountOwner(tx.getToAccount(), requesterEmail)) {
+            return;
+        }
+        throw new ForbiddenOperationException("Not allowed to read this transaction");
+    }
+
+    private void assertCanReadAccount(Account account, String requesterEmail) {
+        if (isAdmin(requesterEmail) || isAccountOwner(account, requesterEmail)) {
+            return;
+        }
+        throw new ForbiddenOperationException("Not allowed to read this account history");
+    }
+
+    private boolean isAdmin(String requesterEmail) {
+        return userRepository.findByEmail(requesterEmail)
+                .map(user -> user.getRole() == Role.ADMIN)
+                .orElse(false);
+    }
+
+    private boolean isAccountOwner(Account account, String requesterEmail) {
+        return account.getUser().getEmail().equals(requesterEmail);
     }
 
     private Transaction lockTransaction(UUID transactionId) {

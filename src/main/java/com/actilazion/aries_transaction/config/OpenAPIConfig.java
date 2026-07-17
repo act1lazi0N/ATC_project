@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Configuration;
 @OpenAPIDefinition(
         info = @Info(
                 title = "Aries Transaction API",
-                version = "1.0",
+                version = "2.0",
                 description = "Internal money transfer system"
         )
 )

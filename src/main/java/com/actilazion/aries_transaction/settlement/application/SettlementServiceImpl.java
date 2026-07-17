@@ -32,10 +32,6 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class SettlementServiceImpl implements SettlementService {
-    private static final BigDecimal BASIS_POINTS = new BigDecimal("10000");
-    private static final String CLEARING_ACCOUNT_PREFIX = "CLEARING";
-    private static final String PAYABLE_ACCOUNT_PREFIX = "PAYABLE";
-    private static final String REVENUE_ACCOUNT_PREFIX = "REVENUE";
 
     private final TransactionRepository transactionRepository;
     private final SettlementBatchRepository settlementBatchRepository;
@@ -125,9 +121,7 @@ public class SettlementServiceImpl implements SettlementService {
     }
 
     private BigDecimal calculateFee(BigDecimal grossAmount, int feeRateBps) {
-        return grossAmount
-                .multiply(BigDecimal.valueOf(feeRateBps))
-                .divide(BASIS_POINTS, 2, RoundingMode.HALF_UP);
+        return BasisPointRate.of(feeRateBps).applyTo(grossAmount);
     }
 
     private boolean matchesRequest(
@@ -142,9 +136,9 @@ public class SettlementServiceImpl implements SettlementService {
     }
 
     private void recordSettlementLedger(SettlementBatch batch) {
-        Account clearingAccount = settlementAccount(CLEARING_ACCOUNT_PREFIX, batch.getCurrency());
-        Account receiverPayableAccount = settlementAccount(PAYABLE_ACCOUNT_PREFIX, batch.getCurrency());
-        Account platformRevenueAccount = settlementAccount(REVENUE_ACCOUNT_PREFIX, batch.getCurrency());
+        Account clearingAccount = settlementAccount(SettlementAccountRole.CLEARING, batch.getCurrency());
+        Account receiverPayableAccount = settlementAccount(SettlementAccountRole.RECEIVER_PAYABLE, batch.getCurrency());
+        Account platformRevenueAccount = settlementAccount(SettlementAccountRole.PLATFORM_REVENUE, batch.getCurrency());
 
         for (SettlementItem item : batch.getItems()) {
             ledgerService.recordSettlement(
@@ -159,17 +153,39 @@ public class SettlementServiceImpl implements SettlementService {
         }
     }
 
-    private Account settlementAccount(String prefix, String currency) {
-        String accountNumber = prefix + "-" + currency;
+    private Account settlementAccount(SettlementAccountRole role, String currency) {
+        String accountNumber = role.accountNumber(currency);
         return accountRepository.findByAccountNumber(accountNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("SettlementAccount", accountNumber));
     }
 
-    private void assertPrivileged(String initiatorEmail) {
-        User initiator = userRepository.findByEmail(initiatorEmail)
-                .orElseThrow(() -> new ResourceNotFoundException("User", initiatorEmail));
-        if (initiator.getRole() != Role.ADMIN && initiator.getRole() != Role.OPERATOR) {
-            throw new AccessDeniedException("Caller is not authorized for settlement operations");
+    private enum SettlementAccountRole {
+        CLEARING("CLEARING"),
+        RECEIVER_PAYABLE("PAYABLE"),
+        PLATFORM_REVENUE("REVENUE");
+
+        private final String accountNumberPrefix;
+
+        SettlementAccountRole(String accountNumberPrefix) {
+            this.accountNumberPrefix = accountNumberPrefix;
+        }
+
+        private String accountNumber(String currency) {
+            return accountNumberPrefix + "-" + currency;
+        }
+    }
+
+    private record BasisPointRate(int value) {
+        private static final BigDecimal DENOMINATOR = new BigDecimal("10000");
+
+        private static BasisPointRate of(int value) {
+            return new BasisPointRate(value);
+        }
+
+        private BigDecimal applyTo(BigDecimal amount) {
+            return amount
+                    .multiply(BigDecimal.valueOf(value))
+                    .divide(DENOMINATOR, 2, RoundingMode.HALF_UP);
         }
     }
 }

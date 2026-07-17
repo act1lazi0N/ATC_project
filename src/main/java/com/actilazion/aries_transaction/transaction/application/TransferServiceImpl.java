@@ -18,9 +18,11 @@ import com.actilazion.aries_transaction.transaction.domain.exception.CurrencyMis
 import com.actilazion.aries_transaction.transaction.domain.exception.DuplicateTransferException;
 import com.actilazion.aries_transaction.transaction.domain.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.transaction.domain.exception.InsufficientBalanceException;
+import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
 import com.actilazion.aries_transaction.transaction.domain.exception.RefundAmountExceededException;
 import com.actilazion.aries_transaction.transaction.domain.exception.SelfTransferException;
+import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
 import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
@@ -312,15 +314,19 @@ public class TransferServiceImpl implements TransferService {
 
     @Override
     @Transactional(readOnly = true)
-    public TransactionResponse getById(UUID txId) {
+    public TransactionResponse getById(UUID txId, String requesterEmail) {
         Transaction tx = transactionRepository.findById(txId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transaction", txId));
+        assertCanReadTransaction(tx, requesterEmail);
         return TransactionResponse.from(tx);
     }
 
     @Override
     @Transactional(readOnly = true)
-    public Page<TransactionResponse> getByAccount(UUID accountId, Pageable pageable) {
+    public Page<TransactionResponse> getByAccount(UUID accountId, Pageable pageable, String requesterEmail) {
+        Account account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
+        assertCanReadAccount(account, requesterEmail);
         return transactionRepository
                 .findAllByAccountId(accountId, pageable)
                 .map(TransactionResponse::from);
@@ -345,6 +351,32 @@ public class TransferServiceImpl implements TransferService {
     }
 
     private record AccountPair(Account fromAccount, Account toAccount) {
+    }
+
+    private void assertCanReadTransaction(Transaction tx, String requesterEmail) {
+        if (isAdmin(requesterEmail)
+                || isAccountOwner(tx.getFromAccount(), requesterEmail)
+                || isAccountOwner(tx.getToAccount(), requesterEmail)) {
+            return;
+        }
+        throw new ForbiddenOperationException("Not allowed to read this transaction");
+    }
+
+    private void assertCanReadAccount(Account account, String requesterEmail) {
+        if (isAdmin(requesterEmail) || isAccountOwner(account, requesterEmail)) {
+            return;
+        }
+        throw new ForbiddenOperationException("Not allowed to read this account history");
+    }
+
+    private boolean isAdmin(String requesterEmail) {
+        return userRepository.findByEmail(requesterEmail)
+                .map(user -> user.getRole() == Role.ADMIN)
+                .orElse(false);
+    }
+
+    private boolean isAccountOwner(Account account, String requesterEmail) {
+        return account.getUser().getEmail().equals(requesterEmail);
     }
 
     private Transaction lockTransaction(UUID transactionId) {

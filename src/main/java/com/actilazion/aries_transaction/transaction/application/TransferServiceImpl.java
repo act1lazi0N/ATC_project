@@ -22,16 +22,13 @@ import com.actilazion.aries_transaction.transaction.domain.exception.DuplicateTr
 import com.actilazion.aries_transaction.transaction.domain.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.transaction.domain.exception.InsufficientBalanceException;
 import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
-import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
 import com.actilazion.aries_transaction.transaction.domain.exception.RefundAmountExceededException;
 import com.actilazion.aries_transaction.transaction.domain.exception.SelfTransferException;
-import com.actilazion.aries_transaction.identity.domain.Role;
-import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
+import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
+import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
+import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
+import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
 import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
-import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
-import com.actilazion.aries_transaction.audit.application.AuditLogService;
-import com.actilazion.aries_transaction.ledger.application.LedgerService;
-import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -48,9 +45,6 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class TransferServiceImpl implements TransferService {
-    private record LockedAccounts(Account from, Account to) {
-    }
-
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
     private final UserRepository userRepository;
@@ -211,15 +205,15 @@ public class TransferServiceImpl implements TransferService {
 
         Transaction tx = createCompensatingTransaction(
                 original,
-                lockedAccounts.from(),
-                lockedAccounts.to(),
+                lockedFromAccount,
+                lockedToAccount,
                 original.getAmount(),
                 request.idempotencyKey(),
                 request.description(),
                 initiator
         );
 
-        moveBalance(lockedAccounts.from(), lockedAccounts.to(), original.getAmount());
+        moveBalance(lockedFromAccount, lockedToAccount, original.getAmount());
         original.markReversed();
         transactionRepository.save(original);
         tx.markCompleted(OffsetDateTime.now());
@@ -254,15 +248,15 @@ public class TransferServiceImpl implements TransferService {
 
         Transaction tx = createCompensatingTransaction(
                 original,
-                lockedAccounts.from(),
-                lockedAccounts.to(),
+                lockedFromAccount,
+                lockedToAccount,
                 request.amount(),
                 request.idempotencyKey(),
                 request.description(),
                 initiator
         );
 
-        moveBalance(lockedAccounts.from(), lockedAccounts.to(), request.amount());
+        moveBalance(lockedFromAccount, lockedToAccount, request.amount());
         BigDecimal refundedAmount = alreadyRefunded.add(request.amount());
         original.setRefundedAmount(refundedAmount);
         if (refundedAmount.compareTo(original.getAmount()) == 0) {
@@ -411,7 +405,7 @@ public class TransferServiceImpl implements TransferService {
     }
 
     private void assertCanReadTransaction(Transaction tx, String requesterEmail) {
-        if (isAdmin(requesterEmail)
+        if (isPrivileged(requesterEmail)
                 || isAccountOwner(tx.getFromAccount(), requesterEmail)
                 || isAccountOwner(tx.getToAccount(), requesterEmail)) {
             return;
@@ -420,15 +414,15 @@ public class TransferServiceImpl implements TransferService {
     }
 
     private void assertCanReadAccount(Account account, String requesterEmail) {
-        if (isAdmin(requesterEmail) || isAccountOwner(account, requesterEmail)) {
+        if (isPrivileged(requesterEmail) || isAccountOwner(account, requesterEmail)) {
             return;
         }
         throw new ForbiddenOperationException("Not allowed to read this account history");
     }
 
-    private boolean isAdmin(String requesterEmail) {
+    private boolean isPrivileged(String requesterEmail) {
         return userRepository.findByEmail(requesterEmail)
-                .map(user -> user.getRole() == Role.ADMIN)
+                .map(user -> user.getRole() == Role.ADMIN || user.getRole() == Role.OPERATOR)
                 .orElse(false);
     }
 

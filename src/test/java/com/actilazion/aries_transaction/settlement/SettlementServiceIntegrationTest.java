@@ -193,7 +193,7 @@ class SettlementServiceIntegrationTest {
         transferService.refund(
                 refunded.id(),
                 new RefundRequest(new BigDecimal("500000"), UUID.randomUUID().toString(), "Refund before settlement"),
-                sender.getEmail()
+                operator.getEmail()
         );
 
         var batch = settlementService.createBatch("VND", 200, "settle-key-4", cutoff, operator.getEmail());

@@ -4,6 +4,7 @@ import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEvent;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEventStatus;
+import com.actilazion.aries_transaction.outbox.domain.OutboxEventType;
 import com.actilazion.aries_transaction.outbox.infrastructure.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,34 +19,29 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class OutboxEventService {
-    public static final String AGGREGATE_TYPE_TRANSACTION = "Transaction";
-    public static final String EVENT_TYPE_TRANSFER_COMPLETED = "TransferCompleted";
-    public static final String EVENT_TYPE_REVERSAL_COMPLETED = "ReversalCompleted";
-    public static final String EVENT_TYPE_REFUND_COMPLETED = "RefundCompleted";
-
     private final OutboxEventRepository outboxEventRepository;
 
     @Transactional
     public void recordTransferCompleted(Transaction tx) {
-        recordTransactionCompleted(tx, EVENT_TYPE_TRANSFER_COMPLETED);
+        recordTransactionCompleted(tx, OutboxEventType.TRANSFER_COMPLETED);
     }
 
     @Transactional
     public void recordReversalCompleted(Transaction tx) {
-        recordTransactionCompleted(tx, EVENT_TYPE_REVERSAL_COMPLETED);
+        recordTransactionCompleted(tx, OutboxEventType.REVERSAL_COMPLETED);
     }
 
     @Transactional
     public void recordRefundCompleted(Transaction tx) {
-        recordTransactionCompleted(tx, EVENT_TYPE_REFUND_COMPLETED);
+        recordTransactionCompleted(tx, OutboxEventType.REFUND_COMPLETED);
     }
 
-    private void recordTransactionCompleted(Transaction tx, String eventType) {
+    private void recordTransactionCompleted(Transaction tx, OutboxEventType eventType) {
         boolean alreadyRecorded = outboxEventRepository
                 .findByAggregateTypeAndAggregateIdAndEventType(
-                        AGGREGATE_TYPE_TRANSACTION,
+                        eventType.aggregateType(),
                         tx.getId(),
-                        eventType
+                        eventType.eventType()
                 )
                 .isPresent();
         if (alreadyRecorded) {
@@ -53,9 +49,9 @@ public class OutboxEventService {
         }
 
         OutboxEvent event = OutboxEvent.builder()
-                .aggregateType(AGGREGATE_TYPE_TRANSACTION)
+                .aggregateType(eventType.aggregateType())
                 .aggregateId(tx.getId())
-                .eventType(eventType)
+                .eventType(eventType.eventType())
                 .payload(toPayload(tx))
                 .status(OutboxEventStatus.PENDING)
                 .build();

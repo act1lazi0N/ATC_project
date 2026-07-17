@@ -25,10 +25,8 @@ import com.actilazion.aries_transaction.account.infrastructure.AccountRepository
 import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import com.actilazion.aries_transaction.audit.application.AuditLogService;
-import com.actilazion.aries_transaction.transaction.application.IdempotencyService;
 import com.actilazion.aries_transaction.ledger.application.LedgerService;
 import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
-import com.actilazion.aries_transaction.transaction.application.TransferService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -148,15 +146,9 @@ public class TransferServiceImpl implements TransferService {
             throw new SelfTransferException("Self transfer is not allowed");
         }
 
-        Account fromAccount;
-        Account toAccount;
-        if (fromId.compareTo(toId) < 0) {
-            fromAccount = lockAccount(fromId);
-            toAccount = lockAccount(toId);
-        } else {
-            toAccount = lockAccount(toId);
-            fromAccount = lockAccount(fromId);
-        }
+        AccountPair accounts = lockAccountPair(fromId, toId);
+        Account fromAccount = accounts.fromAccount();
+        Account toAccount = accounts.toAccount();
 
         validateAccountActive(fromAccount);
         validateAccountActive(toAccount);
@@ -201,17 +193,12 @@ public class TransferServiceImpl implements TransferService {
     private TransactionResponse doReverse(Transaction original, ReversalRequest request, String initiatorEmail) {
         TransactionStateGuard.assertCanReverse(original);
 
-        Account fromAccount = original.getToAccount();
-        Account toAccount = original.getFromAccount();
-        Account lockedFromAccount;
-        Account lockedToAccount;
-        if (fromAccount.getId().compareTo(toAccount.getId()) < 0) {
-            lockedFromAccount = lockAccount(fromAccount.getId());
-            lockedToAccount = lockAccount(toAccount.getId());
-        } else {
-            lockedToAccount = lockAccount(toAccount.getId());
-            lockedFromAccount = lockAccount(fromAccount.getId());
-        }
+        AccountPair accounts = lockAccountPair(
+                original.getToAccount().getId(),
+                original.getFromAccount().getId()
+        );
+        Account lockedFromAccount = accounts.fromAccount();
+        Account lockedToAccount = accounts.toAccount();
 
         Transaction tx = createCompensatingTransaction(
                 original,
@@ -249,17 +236,12 @@ public class TransferServiceImpl implements TransferService {
             throw new RefundAmountExceededException(request.amount(), remaining);
         }
 
-        Account fromAccount = original.getToAccount();
-        Account toAccount = original.getFromAccount();
-        Account lockedFromAccount;
-        Account lockedToAccount;
-        if (fromAccount.getId().compareTo(toAccount.getId()) < 0) {
-            lockedFromAccount = lockAccount(fromAccount.getId());
-            lockedToAccount = lockAccount(toAccount.getId());
-        } else {
-            lockedToAccount = lockAccount(toAccount.getId());
-            lockedFromAccount = lockAccount(fromAccount.getId());
-        }
+        AccountPair accounts = lockAccountPair(
+                original.getToAccount().getId(),
+                original.getFromAccount().getId()
+        );
+        Account lockedFromAccount = accounts.fromAccount();
+        Account lockedToAccount = accounts.toAccount();
 
         Transaction tx = createCompensatingTransaction(
                 original,
@@ -347,6 +329,22 @@ public class TransferServiceImpl implements TransferService {
     private Account lockAccount(UUID accountId) {
         return accountRepository.findByIdWithLock(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
+    }
+
+    private AccountPair lockAccountPair(UUID fromAccountId, UUID toAccountId) {
+        Account fromAccount;
+        Account toAccount;
+        if (fromAccountId.compareTo(toAccountId) < 0) {
+            fromAccount = lockAccount(fromAccountId);
+            toAccount = lockAccount(toAccountId);
+        } else {
+            toAccount = lockAccount(toAccountId);
+            fromAccount = lockAccount(fromAccountId);
+        }
+        return new AccountPair(fromAccount, toAccount);
+    }
+
+    private record AccountPair(Account fromAccount, Account toAccount) {
     }
 
     private Transaction lockTransaction(UUID transactionId) {

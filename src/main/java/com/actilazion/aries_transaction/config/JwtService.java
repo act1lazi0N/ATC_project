@@ -2,19 +2,19 @@ package com.actilazion.aries_transaction.config;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
-import java.security.Key;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.function.Function;
+import javax.crypto.SecretKey;
 
-import static io.jsonwebtoken.Jwts.*;
+import static io.jsonwebtoken.Jwts.builder;
+import static io.jsonwebtoken.Jwts.parser;
 
 @Service
 @RequiredArgsConstructor
@@ -37,11 +37,11 @@ public class JwtService {
     public String generateToken(HashMap<String, Object> claims, UserDetails userDetails) {
         long nowMs = System.currentTimeMillis();
         return builder()
-                .setClaims(claims)
-                .setSubject(userDetails.getUsername())
-                .setIssuedAt(new Date(nowMs))
-                .setExpiration(new Date(nowMs + jwtConfig.getExpiration() * 1000))
-                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .claims(claims)
+                .subject(userDetails.getUsername())
+                .issuedAt(new Date(nowMs))
+                .expiration(new Date(nowMs + jwtConfig.getExpiration() * 1000))
+                .signWith(getSigningKey(), Jwts.SIG.HS256)
                 .compact();
     }
 
@@ -50,15 +50,15 @@ public class JwtService {
     }
 
     private <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
-        final Claims claims = Jwts.parser()
-                .setSigningKey(getSigningKey())
+        final Claims claims = parser()
+                .verifyWith(getSigningKey())
                 .build()
-                .parseClaimsJws(token)
-                .getBody();
+                .parseSignedClaims(token)
+                .getPayload();
         return claimsResolver.apply(claims);
     }
 
-    private Key getSigningKey() {
+    private SecretKey getSigningKey() {
         byte[] keyBytes = Decoders.BASE64.decode(jwtConfig.getSecret());
         return Keys.hmacShaKeyFor(keyBytes);
     }

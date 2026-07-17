@@ -10,4 +10,10 @@ import java.util.UUID;
 @Repository
 public interface IdempotencyRecordRepository extends JpaRepository<IdempotencyRecord, UUID> {
     Optional<IdempotencyRecord> findByIdempotencyKey(String idempotencyKey);
+
+    Optional<IdempotencyRecord> findByIdempotencyKeyAndOperationAndInitiatorEmail(
+            String idempotencyKey,
+            String operation,
+            String initiatorEmail
+    );
 }

@@ -30,8 +30,8 @@ import java.util.UUID;
 @Table(
         name = "idempotency_records",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_idempotency_records_key",
-                columnNames = "idempotency_key"
+                name = "uk_idempotency_records_scope",
+                columnNames = {"idempotency_key", "operation", "initiator_email"}
         )
 )
 @Getter
@@ -47,6 +47,12 @@ public class IdempotencyRecord {
 
     @Column(name = "idempotency_key", nullable = false, length = 64, updatable = false)
     private String idempotencyKey;
+
+    @Column(nullable = false, length = 30, updatable = false)
+    private String operation;
+
+    @Column(name = "initiator_email", nullable = false, length = 255, updatable = false)
+    private String initiatorEmail;
 
     @Column(name = "request_hash", nullable = false, length = 128, updatable = false)
     private String requestHash;

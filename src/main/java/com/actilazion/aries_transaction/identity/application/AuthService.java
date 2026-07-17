@@ -1,6 +1,7 @@
 package com.actilazion.aries_transaction.identity.application;
 
 import com.actilazion.aries_transaction.config.JwtService;
+import com.actilazion.aries_transaction.config.JwtConfig;
 import com.actilazion.aries_transaction.identity.dto.LoginRequest;
 import com.actilazion.aries_transaction.identity.dto.RegisterRequest;
 import com.actilazion.aries_transaction.identity.dto.AuthResponse;
@@ -25,6 +26,7 @@ public class AuthService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final JwtConfig jwtConfig;
     private final AuthenticationManager authenticationManager;
 
     @Transactional
@@ -51,7 +53,7 @@ public class AuthService {
                 .build()
         );
 
-        return AuthResponse.of(token, 86400L, UserResponse.from(user));
+        return AuthResponse.of(token, jwtConfig.getExpiration(), UserResponse.from(user));
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -69,6 +71,6 @@ public class AuthService {
                 .build()
         );
 
-        return AuthResponse.of(token, 86400L, UserResponse.from(user));
+        return AuthResponse.of(token, jwtConfig.getExpiration(), UserResponse.from(user));
     }
 }

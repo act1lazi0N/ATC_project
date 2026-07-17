@@ -42,6 +42,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest(showSql = false)
 @ActiveProfiles("test")
@@ -66,6 +67,7 @@ class ReconciliationServiceIntegrationTest {
     @Autowired ReconciliationExceptionRepository reconciliationExceptionRepository;
 
     private User sender;
+    private User operator;
     private Account senderAccount;
     private Account receiverAccount;
 
@@ -85,6 +87,13 @@ class ReconciliationServiceIntegrationTest {
                 .email("reconciliation-receiver@test.com")
                 .passwordHash("hashed")
                 .role(Role.USER)
+                .build());
+
+        operator = userRepository.save(User.builder()
+                .fullName("Reconciliation Operator")
+                .email("reconciliation-operator@test.com")
+                .passwordHash("hashed")
+                .role(Role.OPERATOR)
                 .build());
 
         senderAccount = accountRepository.save(Account.builder()
@@ -121,7 +130,7 @@ class ReconciliationServiceIntegrationTest {
                 snapshot(second.id(), "200000", TransactionStatus.COMPLETED, second.completedAt())
         );
 
-        var run = reconciliationService.reconcile("vnd", windowStart, windowEnd);
+        var run = reconciliationService.reconcile("vnd", windowStart, windowEnd, operator.getEmail());
 
         assertThat(run.status()).isEqualTo(ReconciliationRunStatus.COMPLETED);
         assertThat(run.sourceCount()).isEqualTo(2);
@@ -150,7 +159,7 @@ class ReconciliationServiceIntegrationTest {
                 snapshot(UUID.randomUUID(), "500000", TransactionStatus.COMPLETED, statusMismatch.completedAt())
         );
 
-        var run = reconciliationService.reconcile("VND", windowStart, windowEnd);
+        var run = reconciliationService.reconcile("VND", windowStart, windowEnd, operator.getEmail());
 
         assertThat(run.status()).isEqualTo(ReconciliationRunStatus.COMPLETED);
         assertThat(run.sourceCount()).isEqualTo(4);
@@ -167,6 +176,21 @@ class ReconciliationServiceIntegrationTest {
                 );
         assertThat(reconciliationRunRepository.count()).isEqualTo(1);
         assertThat(reconciliationExceptionRepository.count()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("User cannot run reconciliation through service layer")
+    void reconcile_userRole_throwsAccessDenied() {
+        var transfer = transferService.transfer(transferRequest("100000"), sender.getEmail());
+        OffsetDateTime windowStart = transfer.completedAt().minusSeconds(1);
+        OffsetDateTime windowEnd = transfer.completedAt().plusSeconds(1);
+
+        assertThatThrownBy(() -> reconciliationService.reconcile(
+                "VND",
+                windowStart,
+                windowEnd,
+                sender.getEmail()
+        )).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
     }
 
     private TransferRequest transferRequest(String amount) {

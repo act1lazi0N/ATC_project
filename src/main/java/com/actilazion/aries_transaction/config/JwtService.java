@@ -4,6 +4,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -19,7 +20,17 @@ import static io.jsonwebtoken.Jwts.parser;
 @Service
 @RequiredArgsConstructor
 public class JwtService {
+    private static final String TOKEN_TYPE_CLAIM = "typ";
+
     private final JwtConfig jwtConfig;
+
+    @PostConstruct
+    void validateConfiguration() {
+        getSigningKey();
+        requireText(jwtConfig.getIssuer(), "jwt.issuer");
+        requireText(jwtConfig.getAudience(), "jwt.audience");
+        requireText(jwtConfig.getTokenType(), "jwt.token-type");
+    }
 
     public String generateToken(UserDetails userDetails) {
         return generateToken(new HashMap<>(), userDetails);
@@ -31,7 +42,7 @@ public class JwtService {
 
     public boolean isTokenValid(String token, UserDetails userDetails) {
         final String username = extractUsername(token);
-        return username.equals(userDetails.getUsername());
+        return username != null && !username.isBlank() && username.equals(userDetails.getUsername());
     }
 
     public String generateToken(HashMap<String, Object> claims, UserDetails userDetails) {
@@ -61,5 +72,37 @@ public class JwtService {
     private SecretKey getSigningKey() {
         byte[] keyBytes = Decoders.BASE64.decode(jwtConfig.getSecret());
         return Keys.hmacShaKeyFor(keyBytes);
+    }
+
+    private void requireText(String value, String propertyName) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException(propertyName + " must not be blank");
+        }
+    }
+
+    private void validateClaims(Claims claims) {
+        if (!jwtConfig.getIssuer().equals(claims.getIssuer())) {
+            throw new IllegalArgumentException("JWT issuer is invalid");
+        }
+        if (!audienceMatches(claims.get(Claims.AUDIENCE))) {
+            throw new IllegalArgumentException("JWT audience is invalid");
+        }
+        if (!jwtConfig.getTokenType().equals(claims.get(TOKEN_TYPE_CLAIM, String.class))) {
+            throw new IllegalArgumentException("JWT token type is invalid");
+        }
+        String subject = claims.getSubject();
+        if (subject == null || subject.isBlank()) {
+            throw new IllegalArgumentException("JWT subject is required");
+        }
+    }
+
+    private boolean audienceMatches(Object audience) {
+        if (audience instanceof String value) {
+            return jwtConfig.getAudience().equals(value);
+        }
+        if (audience instanceof Collection<?> values) {
+            return values.contains(jwtConfig.getAudience());
+        }
+        return false;
     }
 }

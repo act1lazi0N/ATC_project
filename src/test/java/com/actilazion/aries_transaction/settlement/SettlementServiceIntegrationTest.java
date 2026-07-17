@@ -66,6 +66,7 @@ class SettlementServiceIntegrationTest {
     @Autowired LedgerEntryRepository ledgerEntryRepository;
 
     private User sender;
+    private User operator;
     private Account senderAccount;
     private Account receiverAccount;
 
@@ -75,7 +76,7 @@ class SettlementServiceIntegrationTest {
                 .fullName("Settlement Sender")
                 .email("settlement-sender@test.com")
                 .passwordHash("hashed")
-                .role(Role.USER)
+                .role(Role.MERCHANT)
                 .build());
 
         User receiver = userRepository.save(User.builder()
@@ -110,6 +111,13 @@ class SettlementServiceIntegrationTest {
                 .role(Role.ADMIN)
                 .build());
 
+        operator = userRepository.save(User.builder()
+                .fullName("Settlement Operator")
+                .email("settlement-operator@test.com")
+                .passwordHash("hashed")
+                .role(Role.OPERATOR)
+                .build());
+
         accountRepository.save(systemAccount(system, "CLEARING-VND", AccountType.CLEARING));
         accountRepository.save(systemAccount(system, "PAYABLE-VND", AccountType.RECEIVER_PAYABLE));
         accountRepository.save(systemAccount(system, "REVENUE-VND", AccountType.PLATFORM_REVENUE));
@@ -125,7 +133,7 @@ class SettlementServiceIntegrationTest {
         var second = transferService.transfer(transferRequest("500000"), sender.getEmail());
         OffsetDateTime cutoff = second.completedAt().plusSeconds(1);
 
-        var batch = settlementService.createBatch("VND", 200, "settle-key-1", cutoff);
+        var batch = settlementService.createBatch("VND", 200, "settle-key-1", cutoff, operator.getEmail());
 
         assertThat(batch.status()).isEqualTo(SettlementBatchStatus.PENDING);
         assertThat(batch.currency()).isEqualTo("VND");
@@ -155,9 +163,15 @@ class SettlementServiceIntegrationTest {
     void createBatch_alreadySettled_throwsNoCandidate() {
         var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
         OffsetDateTime cutoff = transfer.completedAt().plusSeconds(1);
-        settlementService.createBatch("VND", 200, "settle-key-2", cutoff);
+        settlementService.createBatch("VND", 200, "settle-key-2", cutoff, operator.getEmail());
 
-        assertThatThrownBy(() -> settlementService.createBatch("VND", 200, "settle-key-3", cutoff.plusSeconds(1)))
+        assertThatThrownBy(() -> settlementService.createBatch(
+                "VND",
+                200,
+                "settle-key-3",
+                cutoff.plusSeconds(1),
+                operator.getEmail()
+        ))
                 .isInstanceOf(NoSettlementCandidateException.class);
         assertThat(settlementBatchRepository.count()).isEqualTo(1);
         assertThat(settlementItemRepository.count()).isEqualTo(1);
@@ -174,7 +188,7 @@ class SettlementServiceIntegrationTest {
         transferService.reverse(
                 reversed.id(),
                 new ReversalRequest(UUID.randomUUID().toString(), "Reverse before settlement"),
-                sender.getEmail()
+                operator.getEmail()
         );
         transferService.refund(
                 refunded.id(),
@@ -182,7 +196,7 @@ class SettlementServiceIntegrationTest {
                 sender.getEmail()
         );
 
-        var batch = settlementService.createBatch("VND", 200, "settle-key-4", cutoff);
+        var batch = settlementService.createBatch("VND", 200, "settle-key-4", cutoff, operator.getEmail());
 
         assertThat(batch.items()).hasSize(1);
         assertThat(batch.items().getFirst().transactionId()).isEqualTo(eligible.id());
@@ -201,7 +215,7 @@ class SettlementServiceIntegrationTest {
                 .setCompletedAt(cutoff.plusDays(1));
         em.flush();
 
-        var batch = settlementService.createBatch("VND", 200, "settle-key-5", cutoff);
+        var batch = settlementService.createBatch("VND", 200, "settle-key-5", cutoff, operator.getEmail());
 
         assertThat(batch.items()).hasSize(1);
         assertThat(batch.items().getFirst().transactionId()).isEqualTo(included.id());
@@ -215,8 +229,8 @@ class SettlementServiceIntegrationTest {
         var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
         OffsetDateTime cutoff = transfer.completedAt().plusSeconds(1);
 
-        var first = settlementService.createBatch("VND", 200, "settle-key-6", cutoff);
-        var second = settlementService.createBatch("VND", 200, "settle-key-6", cutoff);
+        var first = settlementService.createBatch("VND", 200, "settle-key-6", cutoff, operator.getEmail());
+        var second = settlementService.createBatch("VND", 200, "settle-key-6", cutoff, operator.getEmail());
 
         assertThat(second.id()).isEqualTo(first.id());
         assertThat(settlementBatchRepository.count()).isEqualTo(1);
@@ -232,11 +246,32 @@ class SettlementServiceIntegrationTest {
     void createBatch_sameIdempotencyKeyDifferentRequest_throwsConflict() {
         var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
         OffsetDateTime cutoff = transfer.completedAt().plusSeconds(1);
-        settlementService.createBatch("VND", 200, "settle-key-7", cutoff);
+        settlementService.createBatch("VND", 200, "settle-key-7", cutoff, operator.getEmail());
 
-        assertThatThrownBy(() -> settlementService.createBatch("VND", 300, "settle-key-7", cutoff))
+        assertThatThrownBy(() -> settlementService.createBatch(
+                "VND",
+                300,
+                "settle-key-7",
+                cutoff,
+                operator.getEmail()
+        ))
                 .isInstanceOf(SettlementIdempotencyConflictException.class);
         assertThat(settlementBatchRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("User cannot create settlement batch through service layer")
+    void createBatch_userRole_throwsAccessDenied() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        OffsetDateTime cutoff = transfer.completedAt().plusSeconds(1);
+
+        assertThatThrownBy(() -> settlementService.createBatch(
+                "VND",
+                200,
+                "settle-key-denied",
+                cutoff,
+                sender.getEmail()
+        )).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
     }
 
     private TransferRequest transferRequest(String amount) {

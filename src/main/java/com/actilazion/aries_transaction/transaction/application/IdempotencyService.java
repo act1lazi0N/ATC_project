@@ -24,6 +24,8 @@ import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class IdempotencyService {
+
+    //TODO: Group status become Enums
     private static final String TRANSFER_OPERATION = "TRANSFER";
     private static final String REVERSAL_OPERATION = "REVERSAL";
     private static final String REFUND_OPERATION = "REFUND";

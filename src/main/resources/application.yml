@@ -50,6 +50,9 @@ app:
     publisher: ${OUTBOX_PUBLISHER:noop}
     batch-size: ${OUTBOX_BATCH_SIZE:25}
     poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:5000}
+  reconciliation:
+    expected-lag: ${RECONCILIATION_EXPECTED_LAG:PT5M}
+    max-window: ${RECONCILIATION_MAX_WINDOW:P31D}
 
 logging:
   level:

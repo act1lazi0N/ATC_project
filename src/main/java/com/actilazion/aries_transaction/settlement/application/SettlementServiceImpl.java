@@ -159,6 +159,14 @@ public class SettlementServiceImpl implements SettlementService {
                 .orElseThrow(() -> new ResourceNotFoundException("SettlementAccount", accountNumber));
     }
 
+    private void assertPrivileged(String initiatorEmail) {
+        User initiator = userRepository.findByEmail(initiatorEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User", initiatorEmail));
+        if (initiator.getRole() != Role.ADMIN && initiator.getRole() != Role.OPERATOR) {
+            throw new AccessDeniedException("Caller is not authorized for settlement operations");
+        }
+    }
+
     private enum SettlementAccountRole {
         CLEARING("CLEARING"),
         RECEIVER_PAYABLE("PAYABLE"),

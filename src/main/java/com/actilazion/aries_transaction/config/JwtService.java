@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.function.Function;
@@ -50,6 +51,11 @@ public class JwtService {
         return builder()
                 .claims(claims)
                 .subject(userDetails.getUsername())
+                .issuer(jwtConfig.getIssuer())
+                .audience()
+                .add(jwtConfig.getAudience())
+                .and()
+                .claim(TOKEN_TYPE_CLAIM, jwtConfig.getTokenType())
                 .issuedAt(new Date(nowMs))
                 .expiration(new Date(nowMs + jwtConfig.getExpiration() * 1000))
                 .signWith(getSigningKey(), Jwts.SIG.HS256)
@@ -66,6 +72,7 @@ public class JwtService {
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
+        validateClaims(claims);
         return claimsResolver.apply(claims);
     }
 

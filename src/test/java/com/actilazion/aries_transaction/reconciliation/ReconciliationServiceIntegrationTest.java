@@ -10,6 +10,7 @@ import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import com.actilazion.aries_transaction.ledger.application.LedgerService;
 import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
+import com.actilazion.aries_transaction.reconciliation.application.ReconciliationPolicyProperties;
 import com.actilazion.aries_transaction.reconciliation.application.ReconciliationService;
 import com.actilazion.aries_transaction.reconciliation.application.ReconciliationServiceImpl;
 import com.actilazion.aries_transaction.reconciliation.application.ReportingTransactionSnapshotClient;
@@ -52,6 +53,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         OutboxEventService.class,
         LedgerService.class,
         IdempotencyService.class,
+        ReconciliationPolicyProperties.class,
         ReconciliationServiceImpl.class,
         ReconciliationServiceIntegrationTest.FakeReportingConfig.class
 })
@@ -124,7 +126,7 @@ class ReconciliationServiceIntegrationTest {
         var first = transferService.transfer(transferRequest("100000"), sender.getEmail());
         var second = transferService.transfer(transferRequest("200000"), sender.getEmail());
         OffsetDateTime windowStart = first.completedAt().minusSeconds(1);
-        OffsetDateTime windowEnd = second.completedAt().plusSeconds(1);
+        OffsetDateTime windowEnd = OffsetDateTime.now();
         reportingSnapshotClient.snapshots = List.of(
                 snapshot(first.id(), "100000", TransactionStatus.COMPLETED, first.completedAt()),
                 snapshot(second.id(), "200000", TransactionStatus.COMPLETED, second.completedAt())
@@ -149,7 +151,7 @@ class ReconciliationServiceIntegrationTest {
         var amountMismatch = transferService.transfer(transferRequest("300000"), sender.getEmail());
         var statusMismatch = transferService.transfer(transferRequest("400000"), sender.getEmail());
         OffsetDateTime windowStart = missing.completedAt().minusSeconds(1);
-        OffsetDateTime windowEnd = statusMismatch.completedAt().plusSeconds(1);
+        OffsetDateTime windowEnd = OffsetDateTime.now();
 
         reportingSnapshotClient.snapshots = List.of(
                 snapshot(duplicate.id(), "200000", TransactionStatus.COMPLETED, duplicate.completedAt()),
@@ -183,7 +185,7 @@ class ReconciliationServiceIntegrationTest {
     void reconcile_userRole_throwsAccessDenied() {
         var transfer = transferService.transfer(transferRequest("100000"), sender.getEmail());
         OffsetDateTime windowStart = transfer.completedAt().minusSeconds(1);
-        OffsetDateTime windowEnd = transfer.completedAt().plusSeconds(1);
+        OffsetDateTime windowEnd = OffsetDateTime.now();
 
         assertThatThrownBy(() -> reconciliationService.reconcile(
                 "VND",
@@ -191,6 +193,22 @@ class ReconciliationServiceIntegrationTest {
                 windowEnd,
                 sender.getEmail()
         )).isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+    }
+
+    @Test
+    @DisplayName("Reconciliation rejects windows larger than configured maximum")
+    void reconcile_windowTooLarge_throwsException() {
+        OffsetDateTime windowEnd = OffsetDateTime.now().minusDays(1);
+        OffsetDateTime windowStart = windowEnd.minusDays(32);
+
+        assertThatThrownBy(() -> reconciliationService.reconcile(
+                "VND",
+                windowStart,
+                windowEnd,
+                operator.getEmail()
+        ))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("reconciliation window must not exceed");
     }
 
     private TransferRequest transferRequest(String amount) {

@@ -39,3 +39,6 @@ app:
     publisher: noop
     batch-size: 25
     poll-interval-ms: 5000
+  reconciliation:
+    expected-lag: PT0S
+    max-window: P31D

@@ -18,8 +18,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -32,6 +34,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
     private final ReconciliationRunRepository reconciliationRunRepository;
     private final ReportingTransactionSnapshotClient reportingSnapshotClient;
     private final UserRepository userRepository;
+    private final ReconciliationPolicyProperties policyProperties;
 
     @Override
     @Transactional
@@ -42,11 +45,9 @@ public class ReconciliationServiceImpl implements ReconciliationService {
             String initiatorEmail
     ) {
         assertPrivileged(initiatorEmail);
-        if (!windowStart.isBefore(windowEnd)) {
-            throw new IllegalArgumentException("windowStart must be before windowEnd");
-        }
+        validateWindow(windowStart, windowEnd);
 
-        String normalizedCurrency = currency.toUpperCase();
+        String normalizedCurrency = currency.toUpperCase(Locale.ROOT);
         List<Transaction> sourceTransactions = transactionRepository.findForReconciliation(
                 normalizedCurrency,
                 windowStart,
@@ -68,6 +69,26 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         run.complete(sourceTransactions.size(), reportingSnapshots.size(), OffsetDateTime.now());
 
         return ReconciliationRunResponse.from(reconciliationRunRepository.save(run));
+    }
+
+    private void validateWindow(OffsetDateTime windowStart, OffsetDateTime windowEnd) {
+        if (!windowStart.isBefore(windowEnd)) {
+            throw new IllegalArgumentException("windowStart must be before windowEnd");
+        }
+
+        Duration window = Duration.between(windowStart, windowEnd);
+        if (window.compareTo(policyProperties.getMaxWindow()) > 0) {
+            throw new IllegalArgumentException(
+                    "reconciliation window must not exceed " + policyProperties.getMaxWindow()
+            );
+        }
+
+        OffsetDateTime latestSafeWindowEnd = OffsetDateTime.now().minus(policyProperties.getExpectedLag());
+        if (windowEnd.isAfter(latestSafeWindowEnd)) {
+            throw new IllegalArgumentException(
+                    "windowEnd must allow reporting lag of " + policyProperties.getExpectedLag()
+            );
+        }
     }
 
     @Override

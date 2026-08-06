@@ -24,15 +24,28 @@ class OutboxEventServiceIntegrationTest {
     @Autowired OutboxEventRepository outboxEventRepository;
 
     @Test
-    void claimPublishableEvents_marksPendingAndReadyFailedAsProcessing() {
+    void claimPublishableEvents_marksPendingReadyFailedAndStaleProcessingAsProcessing() {
+        OffsetDateTime now = OffsetDateTime.now();
         OutboxEvent pending = outboxEventRepository.save(event(OutboxEventStatus.PENDING, null));
         OutboxEvent readyFailed = outboxEventRepository.save(event(
                 OutboxEventStatus.FAILED,
-                OffsetDateTime.now().minusSeconds(1)
+                now.minusSeconds(1)
         ));
         OutboxEvent unreadyFailed = outboxEventRepository.save(event(
                 OutboxEventStatus.FAILED,
-                OffsetDateTime.now().plusMinutes(1)
+                now.plusMinutes(1)
+        ));
+        OutboxEvent staleProcessing = outboxEventRepository.save(event(
+                OutboxEventStatus.PROCESSING,
+                now.minusSeconds(1)
+        ));
+        OutboxEvent legacyStaleProcessing = outboxEventRepository.save(event(
+                OutboxEventStatus.PROCESSING,
+                null
+        ));
+        OutboxEvent activeProcessing = outboxEventRepository.save(event(
+                OutboxEventStatus.PROCESSING,
+                now.plusMinutes(1)
         ));
         outboxEventRepository.flush();
 
@@ -40,13 +53,21 @@ class OutboxEventServiceIntegrationTest {
 
         assertThat(claimed)
                 .extracting(OutboxEvent::getId)
-                .containsExactlyInAnyOrder(pending.getId(), readyFailed.getId());
-        assertThat(outboxEventRepository.findById(pending.getId()).orElseThrow().getStatus())
-                .isEqualTo(OutboxEventStatus.PROCESSING);
-        assertThat(outboxEventRepository.findById(readyFailed.getId()).orElseThrow().getStatus())
-                .isEqualTo(OutboxEventStatus.PROCESSING);
+                .containsExactlyInAnyOrder(
+                        pending.getId(),
+                        readyFailed.getId(),
+                        staleProcessing.getId(),
+                        legacyStaleProcessing.getId()
+                );
+        assertThat(claimed)
+                .allSatisfy(event -> {
+                    assertThat(event.getStatus()).isEqualTo(OutboxEventStatus.PROCESSING);
+                    assertThat(event.getNextAttemptAt()).isAfter(now);
+                });
         assertThat(outboxEventRepository.findById(unreadyFailed.getId()).orElseThrow().getStatus())
                 .isEqualTo(OutboxEventStatus.FAILED);
+        assertThat(outboxEventRepository.findById(activeProcessing.getId()).orElseThrow().getNextAttemptAt())
+                .isEqualTo(activeProcessing.getNextAttemptAt());
     }
 
     @Test
@@ -60,6 +81,20 @@ class OutboxEventServiceIntegrationTest {
         assertThat(failed.getAttemptCount()).isEqualTo(1);
         assertThat(failed.getLastError()).isEqualTo("remote 503");
         assertThat(failed.getNextAttemptAt()).isAfter(OffsetDateTime.now());
+    }
+
+    @Test
+    void markPublished_clearsProcessingLease() {
+        OutboxEvent outboxEvent = outboxEventRepository.saveAndFlush(event(
+                OutboxEventStatus.PROCESSING,
+                OffsetDateTime.now().plusMinutes(5)
+        ));
+
+        outboxEventService.markPublished(outboxEvent.getId());
+
+        OutboxEvent published = outboxEventRepository.findById(outboxEvent.getId()).orElseThrow();
+        assertThat(published.getStatus()).isEqualTo(OutboxEventStatus.PUBLISHED);
+        assertThat(published.getNextAttemptAt()).isNull();
     }
 
     private OutboxEvent event(OutboxEventStatus status, OffsetDateTime nextAttemptAt) {

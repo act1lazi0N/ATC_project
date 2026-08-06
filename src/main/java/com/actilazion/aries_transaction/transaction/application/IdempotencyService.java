@@ -32,10 +32,6 @@ public class IdempotencyService {
 
     private final IdempotencyRecordRepository idempotencyRecordRepository;
 
-    public Optional<IdempotencyRecord> findByKey(String idempotencyKey) {
-        return idempotencyRecordRepository.findByIdempotencyKey(idempotencyKey);
-    }
-
     public Optional<IdempotencyRecord> findTransferRecord(TransferRequest request, String initiatorEmail) {
         return findByScope(request.idempotencyKey(), TRANSFER_OPERATION, initiatorEmail);
     }

@@ -17,6 +17,7 @@ import com.actilazion.aries_transaction.settlement.application.SettlementService
 import com.actilazion.aries_transaction.settlement.application.SettlementServiceImpl;
 import com.actilazion.aries_transaction.settlement.domain.PayoutStatus;
 import com.actilazion.aries_transaction.settlement.domain.SettlementBatchStatus;
+import com.actilazion.aries_transaction.settlement.domain.SettlementItem;
 import com.actilazion.aries_transaction.settlement.domain.SettlementItemType;
 import com.actilazion.aries_transaction.settlement.domain.exception.NoSettlementCandidateException;
 import com.actilazion.aries_transaction.settlement.domain.exception.SettlementIdempotencyConflictException;
@@ -28,6 +29,9 @@ import com.actilazion.aries_transaction.transaction.application.TransferServiceI
 import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
 import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
+import com.actilazion.aries_transaction.transaction.domain.Transaction;
+import com.actilazion.aries_transaction.transaction.domain.TransactionOperation;
+import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -247,6 +251,59 @@ class SettlementServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("Final post-settlement refund adjustment takes remaining rounded fee")
+    void createBatch_splitRefundAdjustment_usesRemainingFeeOnFinalRefund() {
+        var transfer = transferService.transfer(transferRequest("1000.00"), sender.getEmail());
+        Transaction original = transactionRepository.findById(transfer.id()).orElseThrow();
+        settlementService.createBatch(
+                "VND",
+                1,
+                "settle-key-original-rounding",
+                transfer.completedAt().plusSeconds(1),
+                operator.getEmail()
+        );
+
+        OffsetDateTime firstCompletedAt = transfer.completedAt().plusSeconds(2);
+        Transaction firstRefund = completedRefund(original, "333.00", firstCompletedAt);
+        var firstAdjustment = settlementService.createBatch(
+                "VND",
+                1,
+                "settle-key-adjustment-rounding-1",
+                firstCompletedAt.plusSeconds(1),
+                operator.getEmail()
+        );
+
+        OffsetDateTime secondCompletedAt = firstCompletedAt.plusSeconds(2);
+        Transaction secondRefund = completedRefund(original, "333.00", secondCompletedAt);
+        var secondAdjustment = settlementService.createBatch(
+                "VND",
+                1,
+                "settle-key-adjustment-rounding-2",
+                secondCompletedAt.plusSeconds(1),
+                operator.getEmail()
+        );
+
+        OffsetDateTime thirdCompletedAt = secondCompletedAt.plusSeconds(2);
+        Transaction thirdRefund = completedRefund(original, "334.00", thirdCompletedAt);
+        var thirdAdjustment = settlementService.createBatch(
+                "VND",
+                1,
+                "settle-key-adjustment-rounding-3",
+                thirdCompletedAt.plusSeconds(1),
+                operator.getEmail()
+        );
+
+        assertThat(firstAdjustment.items().getFirst().feeAmount()).isEqualByComparingTo("0.03");
+        assertThat(secondAdjustment.items().getFirst().feeAmount()).isEqualByComparingTo("0.03");
+        assertThat(thirdAdjustment.items().getFirst().feeAmount()).isEqualByComparingTo("0.04");
+        assertThat(thirdAdjustment.items().getFirst().netAmount()).isEqualByComparingTo("333.96");
+        assertThat(totalAdjustmentFee(original)).isEqualByComparingTo("0.10");
+        assertSettlementAdjustmentLedgerBalanced(firstRefund.getId(), "333.00", "332.97", "0.03");
+        assertSettlementAdjustmentLedgerBalanced(secondRefund.getId(), "333.00", "332.97", "0.03");
+        assertSettlementAdjustmentLedgerBalanced(thirdRefund.getId(), "334.00", "333.96", "0.04");
+    }
+
+    @Test
     @DisplayName("Post-settlement reversal creates a full adjustment item")
     void createBatch_postSettlementReversal_createsAdjustmentItem() {
         var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
@@ -372,6 +429,29 @@ class SettlementServiceIntegrationTest {
                 .currency("VND")
                 .status(AccountStatus.ACTIVE)
                 .build();
+    }
+
+    private Transaction completedRefund(Transaction original, String amount, OffsetDateTime completedAt) {
+        Transaction refund = Transaction.builder()
+                .fromAccount(original.getToAccount())
+                .toAccount(original.getFromAccount())
+                .initiatedBy(operator)
+                .amount(new BigDecimal(amount))
+                .currency(original.getCurrency())
+                .operation(TransactionOperation.REFUND)
+                .idempotencyKey(UUID.randomUUID().toString())
+                .description("Settlement rounding regression refund")
+                .originalTransaction(original)
+                .status(TransactionStatus.PENDING)
+                .build();
+        refund.markCompleted(completedAt);
+        return transactionRepository.saveAndFlush(refund);
+    }
+
+    private BigDecimal totalAdjustmentFee(Transaction original) {
+        return settlementItemRepository.findAllByTransaction_OriginalTransaction_Id(original.getId()).stream()
+                .map(SettlementItem::getFeeAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private void assertSettlementLedgerBalanced(

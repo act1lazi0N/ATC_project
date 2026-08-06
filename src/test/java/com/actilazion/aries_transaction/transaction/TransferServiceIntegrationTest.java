@@ -806,7 +806,11 @@ public class TransferServiceIntegrationTest {
         assertThat(ledgerEntryRepository.count()).isEqualTo(4);
         assertThat(outboxEventRepository.count()).isEqualTo(2);
         assertThat(idempotencyRecordRepository.count()).isEqualTo(2);
-        assertThat(idempotencyRecordRepository.findByIdempotencyKey(sameKey).orElseThrow().getStatus())
+        assertThat(idempotencyRecordRepository.findByIdempotencyKeyAndOperationAndInitiatorEmail(
+                sameKey,
+                TransactionOperation.REVERSAL.name(),
+                operator.getEmail()
+        ).orElseThrow().getStatus())
                 .isEqualTo(IdempotencyRecordStatus.COMPLETED);
     }
 
@@ -1130,7 +1134,11 @@ public class TransferServiceIntegrationTest {
         assertThat(ledgerEntryRepository.count()).isEqualTo(4);
         assertThat(outboxEventRepository.count()).isEqualTo(2);
         assertThat(idempotencyRecordRepository.count()).isEqualTo(2);
-        assertThat(idempotencyRecordRepository.findByIdempotencyKey(sameKey).orElseThrow().getStatus())
+        assertThat(idempotencyRecordRepository.findByIdempotencyKeyAndOperationAndInitiatorEmail(
+                sameKey,
+                TransactionOperation.REFUND.name(),
+                operator.getEmail()
+        ).orElseThrow().getStatus())
                 .isEqualTo(IdempotencyRecordStatus.COMPLETED);
         assertThat(transactionRepository.findById(transfer.id()).orElseThrow().getRefundedAmount())
                 .isEqualByComparingTo("400000");
@@ -1158,7 +1166,11 @@ public class TransferServiceIntegrationTest {
         assertThat(ledgerEntryRepository.count()).isEqualTo(4);
         assertThat(outboxEventRepository.count()).isEqualTo(2);
         assertThat(idempotencyRecordRepository.count()).isEqualTo(2);
-        assertThat(idempotencyRecordRepository.findByIdempotencyKey(sameKey).orElseThrow().getStatus())
+        assertThat(idempotencyRecordRepository.findByIdempotencyKeyAndOperationAndInitiatorEmail(
+                sameKey,
+                TransactionOperation.REFUND.name(),
+                operator.getEmail()
+        ).orElseThrow().getStatus())
                 .isEqualTo(IdempotencyRecordStatus.COMPLETED);
     }
 

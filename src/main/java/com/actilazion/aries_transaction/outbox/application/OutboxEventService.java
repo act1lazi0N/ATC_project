@@ -23,6 +23,7 @@ import java.util.UUID;
 public class OutboxEventService {
     private static final int MAX_ERROR_LENGTH = 500;
     private static final Duration MAX_RETRY_DELAY = Duration.ofMinutes(5);
+    private static final Duration PROCESSING_LEASE_DURATION = Duration.ofMinutes(5);
 
     private final OutboxEventRepository outboxEventRepository;
 
@@ -75,13 +76,14 @@ public class OutboxEventService {
     public List<OutboxEvent> claimPublishableEvents(int limit) {
         OffsetDateTime now = OffsetDateTime.now();
         List<OutboxEvent> events = outboxEventRepository.findPublishableEventsWithLock(
-                List.of(OutboxEventStatus.PENDING, OutboxEventStatus.FAILED),
+                List.of(OutboxEventStatus.PENDING, OutboxEventStatus.FAILED, OutboxEventStatus.PROCESSING),
                 now,
                 PageRequest.of(0, limit)
         );
         events.forEach(event -> {
             event.setStatus(OutboxEventStatus.PROCESSING);
             event.setLastError(null);
+            event.setNextAttemptAt(now.plus(PROCESSING_LEASE_DURATION));
         });
         return outboxEventRepository.saveAllAndFlush(events);
     }
@@ -93,6 +95,7 @@ public class OutboxEventService {
         event.setStatus(OutboxEventStatus.PUBLISHED);
         event.setPublishedAt(OffsetDateTime.now());
         event.setLastError(null);
+        event.setNextAttemptAt(null);
         outboxEventRepository.save(event);
     }
 

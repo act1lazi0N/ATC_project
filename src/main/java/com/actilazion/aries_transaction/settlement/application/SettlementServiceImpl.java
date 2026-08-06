@@ -27,8 +27,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -81,15 +83,16 @@ public class SettlementServiceImpl implements SettlementService {
         BigDecimal grossTotal = BigDecimal.ZERO;
         BigDecimal feeTotal = BigDecimal.ZERO;
         BigDecimal netTotal = BigDecimal.ZERO;
+        Map<UUID, OriginalSettlementContext> adjustmentContexts = new HashMap<>();
 
         for (Transaction transaction : candidates) {
-            SettlementItemType itemType = itemTypeFor(transaction);
-            SettlementAmounts amounts = amountsFor(transaction, feeRateBps, itemType);
+            SettlementItemPlan itemPlan = itemPlanFor(transaction, feeRateBps, adjustmentContexts);
+            SettlementAmounts amounts = itemPlan.amounts();
 
             SettlementItem item = SettlementItem.builder()
                     .transaction(transaction)
-                    .receiverAccount(receiverAccountFor(transaction, itemType))
-                    .itemType(itemType)
+                    .receiverAccount(itemPlan.receiverAccount())
+                    .itemType(itemPlan.itemType())
                     .grossAmount(amounts.grossAmount())
                     .feeAmount(amounts.feeAmount())
                     .netAmount(amounts.netAmount())
@@ -134,42 +137,69 @@ public class SettlementServiceImpl implements SettlementService {
         return SettlementItemType.ADJUSTMENT;
     }
 
-    private SettlementAmounts amountsFor(
+    private SettlementItemPlan itemPlanFor(
             Transaction transaction,
             int feeRateBps,
-            SettlementItemType itemType
+            Map<UUID, OriginalSettlementContext> adjustmentContexts
     ) {
+        SettlementItemType itemType = itemTypeFor(transaction);
         BigDecimal grossAmount = transaction.getAmount();
-        BigDecimal feeAmount = itemType == SettlementItemType.ADJUSTMENT
-                ? calculateAdjustmentFee(transaction, grossAmount)
-                : calculateFee(grossAmount, feeRateBps);
-        return new SettlementAmounts(grossAmount, feeAmount, grossAmount.subtract(feeAmount));
-    }
-
-    private BigDecimal calculateAdjustmentFee(Transaction transaction, BigDecimal grossAmount) {
-        SettlementItem originalItem = originalSettlementItem(transaction);
-        BigDecimal originalAmount = transaction.getOriginalTransaction().getAmount();
-        return originalItem.getFeeAmount()
-                .multiply(grossAmount)
-                .divide(originalAmount, 2, RoundingMode.HALF_UP);
-    }
-
-    private Account receiverAccountFor(Transaction transaction, SettlementItemType itemType) {
         if (itemType == SettlementItemType.NORMAL) {
-            return transaction.getToAccount();
+            BigDecimal feeAmount = calculateFee(grossAmount, feeRateBps);
+            SettlementAmounts amounts = new SettlementAmounts(grossAmount, feeAmount, grossAmount.subtract(feeAmount));
+            return new SettlementItemPlan(transaction.getToAccount(), itemType, amounts);
         }
-        return originalSettlementItem(transaction).getReceiverAccount();
+
+        OriginalSettlementContext context = adjustmentContexts.computeIfAbsent(
+                transaction.getOriginalTransaction().getId(),
+                ignored -> originalSettlementContext(transaction)
+        );
+        BigDecimal feeAmount = calculateAdjustmentFee(grossAmount, context);
+        context.recordAdjustment(grossAmount, feeAmount);
+        SettlementAmounts amounts = new SettlementAmounts(grossAmount, feeAmount, grossAmount.subtract(feeAmount));
+        return new SettlementItemPlan(context.originalItem().getReceiverAccount(), itemType, amounts);
     }
 
-    private SettlementItem originalSettlementItem(Transaction transaction) {
+    private BigDecimal calculateAdjustmentFee(BigDecimal grossAmount, OriginalSettlementContext context) {
+        BigDecimal remainingFee = context.remainingFee();
+        if (remainingFee.signum() <= 0) {
+            return BigDecimal.ZERO;
+        }
+
+        BigDecimal cumulativeGross = context.adjustedGross().add(grossAmount);
+        if (cumulativeGross.compareTo(context.originalGrossAmount()) >= 0) {
+            return remainingFee;
+        }
+
+        BigDecimal proratedFee = context.originalItem().getFeeAmount()
+                .multiply(grossAmount)
+                .divide(context.originalGrossAmount(), 2, RoundingMode.HALF_UP);
+        return proratedFee.min(remainingFee);
+    }
+
+    private OriginalSettlementContext originalSettlementContext(Transaction transaction) {
         Transaction original = transaction.getOriginalTransaction();
         if (original == null) {
             throw new IllegalArgumentException("Settlement adjustment requires an original transaction");
         }
-        return settlementItemRepository.findByTransaction_Id(original.getId())
+        SettlementItem originalItem = settlementItemRepository.findByTransaction_Id(original.getId())
                 .orElseThrow(() -> new IllegalStateException(
                         "Original transaction has no settlement item: " + original.getId()
                 ));
+        List<SettlementItem> priorAdjustments = settlementItemRepository.findAllByTransaction_OriginalTransaction_Id(original.getId());
+        BigDecimal adjustedGross = priorAdjustments.stream()
+                .map(SettlementItem::getGrossAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal adjustedFee = priorAdjustments.stream()
+                .map(SettlementItem::getFeeAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        return new OriginalSettlementContext(
+                originalItem,
+                originalItem.getGrossAmount(),
+                adjustedGross,
+                adjustedFee
+        );
     }
 
     private boolean matchesRequest(
@@ -262,5 +292,52 @@ public class SettlementServiceImpl implements SettlementService {
             BigDecimal feeAmount,
             BigDecimal netAmount
     ) {
+    }
+
+    private record SettlementItemPlan(
+            Account receiverAccount,
+            SettlementItemType itemType,
+            SettlementAmounts amounts
+    ) {
+    }
+
+    private static final class OriginalSettlementContext {
+        private final SettlementItem originalItem;
+        private final BigDecimal originalGrossAmount;
+        private BigDecimal adjustedGross;
+        private BigDecimal adjustedFee;
+
+        private OriginalSettlementContext(
+                SettlementItem originalItem,
+                BigDecimal originalGrossAmount,
+                BigDecimal adjustedGross,
+                BigDecimal adjustedFee
+        ) {
+            this.originalItem = originalItem;
+            this.originalGrossAmount = originalGrossAmount;
+            this.adjustedGross = adjustedGross;
+            this.adjustedFee = adjustedFee;
+        }
+
+        private SettlementItem originalItem() {
+            return originalItem;
+        }
+
+        private BigDecimal originalGrossAmount() {
+            return originalGrossAmount;
+        }
+
+        private BigDecimal adjustedGross() {
+            return adjustedGross;
+        }
+
+        private BigDecimal remainingFee() {
+            return originalItem.getFeeAmount().subtract(adjustedFee);
+        }
+
+        private void recordAdjustment(BigDecimal grossAmount, BigDecimal feeAmount) {
+            adjustedGross = adjustedGross.add(grossAmount);
+            adjustedFee = adjustedFee.add(feeAmount);
+        }
     }
 }

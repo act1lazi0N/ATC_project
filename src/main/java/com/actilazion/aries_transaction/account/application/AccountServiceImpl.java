@@ -4,6 +4,7 @@ import com.actilazion.aries_transaction.account.dto.CreateAccountRequest;
 import com.actilazion.aries_transaction.account.dto.AccountResponse;
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.account.domain.AccountType;
+import com.actilazion.aries_transaction.account.domain.exception.AccountNumberGenerationException;
 import com.actilazion.aries_transaction.account.domain.exception.InternalAccountTypeException;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.account.domain.AccountStatus;
@@ -12,25 +13,46 @@ import com.actilazion.aries_transaction.account.infrastructure.AccountRepository
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.UUID;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AccountServiceImpl implements AccountService {
+    private static final int ACCOUNT_NUMBER_MAX_ATTEMPTS = 5;
+    private static final long ACCOUNT_NUMBER_BOUND = 1_000_000_000_000L;
+
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
+    private final PlatformTransactionManager transactionManager;
 
     @Override
-    @Transactional
     public AccountResponse create(CreateAccountRequest request, String ownerEmail) {
         validatePublicAccountType(request.accountType());
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+        for (int attempt = 1; attempt <= ACCOUNT_NUMBER_MAX_ATTEMPTS; attempt++) {
+            try {
+                return transactionTemplate.execute(status -> createOnce(request, ownerEmail));
+            } catch (DataIntegrityViolationException ex) {
+                if (attempt == ACCOUNT_NUMBER_MAX_ATTEMPTS) {
+                    throw new AccountNumberGenerationException(ACCOUNT_NUMBER_MAX_ATTEMPTS, ex);
+                }
+                log.warn("[ACCOUNT] Account number collision, retrying attempt={}", attempt + 1);
+            }
+        }
+        throw new AccountNumberGenerationException(ACCOUNT_NUMBER_MAX_ATTEMPTS, null);
+    }
+
+    private AccountResponse createOnce(CreateAccountRequest request, String ownerEmail) {
         User owner = userRepository.findByEmail(ownerEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User", ownerEmail));
         Account account = Account.builder()
@@ -42,7 +64,7 @@ public class AccountServiceImpl implements AccountService {
                 .status(AccountStatus.ACTIVE)
                 .build();
 
-        Account saved = accountRepository.save(account);
+        Account saved = accountRepository.saveAndFlush(account);
         log.info("[ACCOUNT] Created accountId={} owner={}", saved.getId(), ownerEmail);
         return AccountResponse.from(saved);
     }
@@ -86,7 +108,7 @@ public class AccountServiceImpl implements AccountService {
     private String generateAccountNumber() {
         String number;
         do {
-            number = String.format("%012d", new Random().nextLong(1_000_000_000_000L));
+            number = String.format("%012d", ThreadLocalRandom.current().nextLong(ACCOUNT_NUMBER_BOUND));
         } while (accountRepository.existsByAccountNumber(number));
         return number;
     }

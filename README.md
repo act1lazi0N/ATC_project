@@ -1,183 +1,335 @@
-# Transfer System
+# Aries Transaction Core
 
-Internal money transfer system built as a monolithic backend service using **Spring Boot**, **PostgreSQL**, **Redis**, and **Flyway**.
+Aries Transaction Core is a learning and portfolio-grade financial backend service focused on reliable account-to-account money movement.
 
-The system supports JWT-based authentication, internal account transfers, idempotency control, audit logging, database migration, and Docker-based local development.
+It is built as a Spring Boot service with realistic backend patterns: JWT authentication, transactional transfer processing, idempotency records, double-entry ledger entries, audit logs, transactional outbox events, settlement batching, and reporting reconciliation checks.
+
+This repository is not a full production banking system. It is the transaction-core service in a broader Aries financial backend ecosystem that can later connect to reporting, settlement, fraud detection, and ML-based risk scoring services.
+
+## Core Goals
+
+- Move money atomically inside one database transaction.
+- Prevent duplicate money movement with scoped idempotency records.
+- Preserve debit-credit equality through append-only ledger entries.
+- Keep account balance updates, transaction state, audit logs, ledger entries, and outbox events consistent.
+- Expose reporting reconciliation as a repair-oriented check, not as the source of truth.
+- Keep service boundaries microservice-ready without forcing all future services into this repository.
 
 ## Tech Stack
 
-* **Backend:** Spring Boot
-* **Database:** PostgreSQL
-* **Cache / Idempotency:** Redis
-* **Migration:** Flyway
-* **Authentication:** JWT
-* **Containerization:** Docker Compose
-* **API Documentation:** Swagger UI / OpenAPI
+- Java 21
+- Spring Boot 4
+- Spring Web, Spring Security, Spring Data JPA
+- PostgreSQL 16
+- Flyway
+- JJWT
+- Redis dependency for future cache/rate-limit/idempotency infrastructure
+- Springdoc OpenAPI
+- JUnit, AssertJ, Spring Security Test, H2, Testcontainers PostgreSQL
+- Docker Compose
 
-## Quick Start
+## Domain Modules
 
-### 1. Copy environment template
+The codebase uses package-by-domain organization under `com.actilazion.aries_transaction`:
 
-```bash
-cp .env.example .env
+```text
+account          account creation, ownership, account status
+audit            transaction audit records
+common           shared DTOs and exceptions
+config           security, JWT, OpenAPI, application config
+identity         registration, login, users, roles
+ledger           double-entry ledger posting
+outbox           transactional outbox events and worker
+reconciliation   reporting mismatch detection
+settlement       settlement batches, items, payout attempts
+transaction      transfer, reversal, refund, idempotency, state guards
 ```
 
-### 2. Generate JWT secret
+## Main Capabilities
 
-Generate a secure JWT secret:
+- User registration and login with signed JWT access tokens.
+- Stateless Spring Security filter chain.
+- Transfer between two accounts with pessimistic account locking.
+- Ownership checks for spending and transaction history reads.
+- Idempotency key handling for transfer, reversal, refund, and settlement batch creation.
+- Balanced ledger entries for transfer, reversal, refund, and settlement accounting.
+- Audit logs for money movement lifecycle events.
+- Transactional outbox event persistence.
+- Reversal and refund state guards.
+- Settlement batch generation with gross, fee, and net amounts.
+- Reporting reconciliation runs that classify missing, duplicate, unexpected, amount mismatch, and status mismatch cases.
 
-```bash
-openssl rand -base64 32
+## Financial Invariants
+
+Transfer processing is synchronous and transactional. A completed transfer is expected to persist all of these in one database transaction:
+
+- transaction record
+- locked source and destination accounts
+- balance validation and balance updates
+- ledger debit and credit entries
+- transaction status transition
+- audit records
+- outbox event
+- completed idempotency record
+
+Ledger entries are append-only. Old entries should not be edited to repair money movement; use reversal, refund, or compensating entries.
+
+## API Overview
+
+Authentication:
+
+```text
+POST /api/v1/auth/register
+POST /api/v1/auth/login
 ```
 
-Then copy the generated value into the `.env` file:
+Transfers:
+
+```text
+POST /api/v1/transfers
+POST /api/v1/transfers/{id}/reverse
+POST /api/v1/transfers/{id}/refund
+GET  /api/v1/transfers/{id}
+GET  /api/v1/transfers/account/{accountId}
+```
+
+Settlement:
+
+```text
+POST /api/v1/settlements/batches
+GET  /api/v1/settlements/batches/{id}
+```
+
+Reporting reconciliation:
+
+```text
+POST /api/v1/reconciliation/runs
+GET  /api/v1/reconciliation/runs/{id}
+```
+
+Swagger UI can be enabled through configuration:
 
 ```env
-JWT_SECRET=your_generated_secret
+SPRINGDOC_API_DOCS_ENABLED=true
+SPRINGDOC_SWAGGER_UI_ENABLED=true
 ```
 
-### 3. Start the full stack
-
-This command starts PostgreSQL, Redis, and the Spring Boot application:
-
-```bash
-docker compose up -d
-```
-
-### 4. Check application logs
-
-```bash
-docker compose logs -f app
-```
-
-### 5. Open Swagger UI
-
-After the application starts successfully, open:
+Then open:
 
 ```text
 http://localhost:8080/swagger-ui/index.html
 ```
 
-## Run Locally Without Dockerizing the App
+## Configuration
 
-If you want to run PostgreSQL and Redis with Docker, but run the Spring Boot application directly on your machine:
+The application imports `.env` automatically:
 
-### 1. Start infrastructure only
+```yaml
+spring.config.import=optional:file:.env[.properties]
+```
+
+Create a local env file:
 
 ```bash
-docker compose up -d postgres redis
+cp .env.example .env
 ```
 
-### 2. Run the application with Maven
+Required values:
+
+```env
+POSTGRES_DB=aries_transaction_db
+POSTGRES_USER=transfer_user
+POSTGRES_PASSWORD=your_strong_password
+JWT_SECRET=replace_this_with_a_base64_256_bit_secret
+```
+
+Generate a JWT secret:
 
 ```bash
-JWT_SECRET=your_secret ./mvnw spring-boot:run
+openssl rand -base64 32
 ```
 
-On Windows PowerShell:
+Common optional values:
 
-```powershell
-$env:JWT_SECRET="your_secret"
-./mvnw spring-boot:run
+```env
+JWT_ISSUER=aries-transaction
+JWT_AUDIENCE=aries-transaction-api
+OUTBOX_WORKER_ENABLED=false
+OUTBOX_PUBLISHER=noop
+OUTBOX_BATCH_SIZE=25
+OUTBOX_POLL_INTERVAL_MS=5000
+RECONCILIATION_EXPECTED_LAG=PT5M
+RECONCILIATION_MAX_WINDOW=P31D
 ```
 
-## Flyway Migration
+OpenAPI is disabled by default outside dev-oriented usage.
 
-Flyway migrations run automatically when the application starts.
+## Run With Docker Compose
 
-Migration files are located in:
+Start PostgreSQL, Redis, and the app:
+
+```bash
+docker compose up -d
+```
+
+Follow app logs:
+
+```bash
+docker compose logs -f app
+```
+
+Check health:
 
 ```text
-src/main/resources/db/migration/
+http://localhost:8080/actuator/health
 ```
 
-| File                  | Description                                    |
-| --------------------- | ---------------------------------------------- |
-| `V1__init_schema.sql` | Creates database tables, indexes, and triggers |
-| `V2__seed_data.sql`   | Inserts sample development data                |
-
-> Do not edit migration files that have already been executed.
-> Create a new migration file such as `V3__your_change.sql` instead.
-
-## Demo Accounts
-
-The seed migration creates disabled sample accounts for local data shape only. Do not use these as login credentials; create a user through `/api/v1/auth/register` or enable a local-only demo seed outside the production migration path.
-
-| Email                   | Password      | Role  | Note                     |
-| ----------------------- | ------------- | ----- | ------------------------ |
-| `admin@transfer.local`  | Disabled | ADMIN | Sample admin account |
-| `user_a@transfer.local` | Disabled | USER  | Sample user account |
-| `user_b@transfer.local` | Disabled | USER  | Sample user account |
-| `user_c@transfer.local` | Disabled | USER  | Sample user with frozen account |
-
-## Useful Commands
-
-### Stop containers but keep data
+Stop containers while keeping volumes:
 
 ```bash
 docker compose stop
 ```
 
-### Stop containers and remove all data
+Remove containers and data volumes:
 
 ```bash
 docker compose down -v
 ```
 
-### Restart the application container
+## Run App Locally
+
+Start only infrastructure:
 
 ```bash
-docker compose restart app
+docker compose up -d postgres redis
 ```
 
-### View PostgreSQL logs
+Run the app on Windows PowerShell:
+
+```powershell
+$env:SPRING_PROFILES_ACTIVE="dev"
+$env:JWT_SECRET="your_base64_secret"
+$env:POSTGRES_DB="aries_transaction_db"
+$env:POSTGRES_USER="transfer_user"
+$env:POSTGRES_PASSWORD="your_strong_password"
+.\mvnw.cmd spring-boot:run
+```
+
+Run the app on macOS/Linux:
 
 ```bash
-docker compose logs -f postgres
+SPRING_PROFILES_ACTIVE=dev \
+JWT_SECRET=your_base64_secret \
+POSTGRES_DB=aries_transaction_db \
+POSTGRES_USER=transfer_user \
+POSTGRES_PASSWORD=your_strong_password \
+./mvnw spring-boot:run
 ```
 
-### View Redis logs
+## Database Migrations
 
-```bash
-docker compose logs -f redis
-```
-
-## Project Structure
+Flyway migrations live in:
 
 ```text
-src/main/java
-└── com/actilazion/aries_transaction
-    ├── config
-    ├── controller
-    ├── dto
-    ├── entity
-    ├── exception
-    ├── repository
-    └── service
-
-src/main/resources
-├── application.yaml
-└── db/migration
-    ├── V1__init_schema.sql
-    └── V2__seed_data.sql
+src/main/resources/db/migration
 ```
 
-## Main Features
+Current migration chain covers:
 
-* User registration and login with JWT authentication
-* Stateless Spring Security configuration
-* Internal account-to-account money transfer
-* PostgreSQL persistence with JPA
-* Redis-based idempotency control
-* Flyway database migration
-* Transaction audit logging
-* Account balance validation
-* Transaction history API
-* Swagger UI for API testing
+- base users, accounts, transactions, audit logs
+- seed data and password hash alignment
+- currency and enum-column alignment
+- outbox events
+- ledger entries
+- transaction state guards
+- idempotency records scoped by operation and initiator
+- reversal/refund metadata
+- settlement batches, items, payout attempts, accounting hardening
+- reconciliation runs and exceptions
+- merchant/operator roles and disabled demo users
 
-## Notes
+Do not edit migrations that may already have run. Add a new migration such as `V22__your_change.sql`.
 
-* The application requires a valid `JWT_SECRET`.
-* PostgreSQL and Redis must be running before starting the application locally.
-* Seed data is intended for development and testing only.
-* For production deployment, replace demo credentials, use a secure JWT secret, and review database/security configuration.
+## Demo Data
+
+Seed users exist only to shape local data and are disabled by migration hardening:
+
+```text
+admin@transfer.local
+user_a@transfer.local
+user_b@transfer.local
+user_c@transfer.local
+```
+
+Create usable local users through:
+
+```text
+POST /api/v1/auth/register
+```
+
+## Testing
+
+Run the full local test suite:
+
+```powershell
+.\mvnw.cmd test
+```
+
+On macOS/Linux:
+
+```bash
+./mvnw test
+```
+
+The suite covers service integration, security filter behavior, transaction state guards, transfer concurrency, ledger/outbox assertions, settlement, reconciliation, and Flyway migration validation.
+
+Most integration tests use H2 in PostgreSQL compatibility mode for fast feedback. PostgreSQL-specific coverage is added with Testcontainers where it matters, including reconciliation policy behavior with Flyway-backed PostgreSQL. Testcontainers tests are skipped automatically when Docker is unavailable.
+
+## Security Notes
+
+- `JWT_SECRET` is required and must be a strong base64 secret.
+- JWT validation checks issuer, audience, token type, signature, and expiration.
+- Disabled users cannot authenticate with existing tokens.
+- Swagger/OpenAPI is disabled by default outside dev usage.
+- Demo users are disabled by migration hardening.
+- Settlement and reconciliation operations are restricted to privileged roles in the service layer.
+
+## Reporting and Reconciliation
+
+Transaction Core is the source of truth. Reporting is a read model and may lag.
+
+Reconciliation compares core transactions with reporting snapshots in an explicit completed-at window. It stores runs and exceptions instead of silently mutating source data.
+
+Current reconciliation policy:
+
+```text
+expected lag: PT5M by default
+max window:   P31D by default
+```
+
+The default reporting snapshot client is still a no-op adapter. A real reporting service client or reporting projection should replace it before this feature is treated as an end-to-end integration.
+
+## Roadmap
+
+Recommended next phases:
+
+```text
+1. Stabilize transaction core and authorization tests
+2. Harden outbox retry and delivery semantics
+3. Replace no-op reporting snapshot client
+4. Expand PostgreSQL/Testcontainers coverage for locking and reconciliation
+5. Mature settlement payout lifecycle
+6. Add reporting backfill and repair workflows
+7. Build separate aries-fraud-detection service
+8. Add rule-based risk decisions before ML
+```
+
+## Repository Role
+
+This repository should remain focused on transaction-core responsibilities. Future reporting, fraud detection, and platform orchestration can live in separate repositories such as:
+
+```text
+aries-reporting
+aries-fraud-detection
+aries-platform
+```

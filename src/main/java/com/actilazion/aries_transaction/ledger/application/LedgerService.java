@@ -49,8 +49,31 @@ public class LedgerService {
 
         List<LedgerEntry> entries = new java.util.ArrayList<>();
         entries.add(buildEntry(tx, clearingAccount, LedgerDirection.DEBIT, grossAmount, LedgerEntryType.SETTLEMENT));
-        addPositiveEntry(entries, tx, receiverPayableAccount, LedgerDirection.CREDIT, receiverPayable);
-        addPositiveEntry(entries, tx, platformRevenueAccount, LedgerDirection.CREDIT, platformRevenue);
+        addPositiveEntry(entries, tx, receiverPayableAccount, LedgerDirection.CREDIT, receiverPayable, LedgerEntryType.SETTLEMENT);
+        addPositiveEntry(entries, tx, platformRevenueAccount, LedgerDirection.CREDIT, platformRevenue, LedgerEntryType.SETTLEMENT);
+
+        validateBalanced(entries);
+        ledgerEntryRepository.saveAll(entries);
+    }
+
+    @Transactional
+    public void recordSettlementAdjustment(
+            Transaction tx,
+            Account clearingAccount,
+            Account receiverPayableAccount,
+            Account platformRevenueAccount,
+            BigDecimal grossAmount,
+            BigDecimal receiverPayable,
+            BigDecimal platformRevenue
+    ) {
+        if (ledgerEntryRepository.countByTransactionIdAndEntryType(tx.getId(), LedgerEntryType.ADJUSTMENT) > 0) {
+            return;
+        }
+
+        List<LedgerEntry> entries = new java.util.ArrayList<>();
+        addPositiveEntry(entries, tx, receiverPayableAccount, LedgerDirection.DEBIT, receiverPayable, LedgerEntryType.ADJUSTMENT);
+        addPositiveEntry(entries, tx, platformRevenueAccount, LedgerDirection.DEBIT, platformRevenue, LedgerEntryType.ADJUSTMENT);
+        entries.add(buildEntry(tx, clearingAccount, LedgerDirection.CREDIT, grossAmount, LedgerEntryType.ADJUSTMENT));
 
         validateBalanced(entries);
         ledgerEntryRepository.saveAll(entries);
@@ -76,10 +99,11 @@ public class LedgerService {
             Transaction tx,
             Account account,
             LedgerDirection direction,
-            BigDecimal amount
+            BigDecimal amount,
+            LedgerEntryType entryType
     ) {
         if (amount.compareTo(BigDecimal.ZERO) > 0) {
-            entries.add(buildEntry(tx, account, direction, amount, LedgerEntryType.SETTLEMENT));
+            entries.add(buildEntry(tx, account, direction, amount, entryType));
         }
     }
 

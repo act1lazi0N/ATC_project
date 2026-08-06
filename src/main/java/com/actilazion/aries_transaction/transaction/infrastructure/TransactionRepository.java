@@ -39,14 +39,26 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     WHERE t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.COMPLETED
       AND t.currency = :currency
       AND t.completedAt <= :cutoffCompletedAt
-      AND t.originalTransaction IS NULL
-      AND NOT EXISTS (
-          SELECT 1 FROM Transaction related
-          WHERE related.originalTransaction = t
-      )
       AND NOT EXISTS (
           SELECT 1 FROM SettlementItem item
           WHERE item.transaction = t
+      )
+      AND (
+          (
+              t.originalTransaction IS NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM Transaction related
+                  WHERE related.originalTransaction = t
+              )
+          )
+          OR (
+              t.originalTransaction IS NOT NULL
+              AND EXISTS (
+                  SELECT 1 FROM SettlementItem originalItem
+                  WHERE originalItem.transaction = t.originalTransaction
+                    AND originalItem.itemType = com.actilazion.aries_transaction.settlement.domain.SettlementItemType.NORMAL
+              )
+          )
       )
     ORDER BY t.completedAt ASC
     """)

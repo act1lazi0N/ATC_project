@@ -101,6 +101,49 @@ class SecurityFilterIntegrationTest {
     }
 
     @Test
+    void login_badCredentials_unauthorized() throws Exception {
+        User user = savedUser(Role.USER, true);
+
+        HttpResponse<String> response = postWithoutAuthorization("/api/v1/auth/login", """
+                {
+                  "email": "%s",
+                  "password": "wrong-password"
+                }
+                """.formatted(user.getEmail()));
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("\"status\":401");
+        assertThat(response.body()).contains("\"message\":\"Unauthorized\"");
+    }
+
+    @Test
+    void protectedEndpoint_malformedUuid_badRequest() throws Exception {
+        String token = tokenFor(savedUser(Role.USER, true));
+
+        HttpResponse<String> response = get("/api/v1/transfers/not-a-uuid", token);
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("\"status\":400");
+    }
+
+    @Test
+    void reconciliationCreate_invalidWindow_badRequest() throws Exception {
+        String token = tokenFor(savedUser(Role.OPERATOR, true));
+
+        HttpResponse<String> response = post("/api/v1/reconciliation/runs", token, """
+                {
+                  "currency": "VND",
+                  "windowStart": "2026-07-14T00:00:00Z",
+                  "windowEnd": "2026-07-13T00:00:00Z"
+                }
+                """);
+
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("\"status\":400");
+        assertThat(response.body()).contains("windowStart must be before windowEnd");
+    }
+
+    @Test
     void protectedEndpoint_wrongIssuerToken_unauthorized() throws Exception {
         User user = savedUser(Role.USER, true);
 
@@ -205,6 +248,14 @@ class SecurityFilterIntegrationTest {
     private HttpResponse<String> post(String path, String token, String body) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(uri(path))
                 .header("Authorization", bearer(token))
+                .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> postWithoutAuthorization(String path, String body) throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri(path))
                 .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
                 .POST(HttpRequest.BodyPublishers.ofString(body))
                 .build();

@@ -53,6 +53,10 @@ app:
   reconciliation:
     expected-lag: ${RECONCILIATION_EXPECTED_LAG:PT5M}
     max-window: ${RECONCILIATION_MAX_WINDOW:P31D}
+    reporting:
+      mode: ${RECONCILIATION_REPORTING_MODE:disabled}
+      base-url: ${RECONCILIATION_REPORTING_BASE_URL:}
+      snapshots-path: ${RECONCILIATION_REPORTING_SNAPSHOTS_PATH:/api/v1/reporting/transactions/snapshots}
 
 logging:
   level:

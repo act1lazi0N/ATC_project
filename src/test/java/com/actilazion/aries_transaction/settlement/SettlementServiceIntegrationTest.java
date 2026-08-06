@@ -17,6 +17,7 @@ import com.actilazion.aries_transaction.settlement.application.SettlementService
 import com.actilazion.aries_transaction.settlement.application.SettlementServiceImpl;
 import com.actilazion.aries_transaction.settlement.domain.PayoutStatus;
 import com.actilazion.aries_transaction.settlement.domain.SettlementBatchStatus;
+import com.actilazion.aries_transaction.settlement.domain.SettlementItemType;
 import com.actilazion.aries_transaction.settlement.domain.exception.NoSettlementCandidateException;
 import com.actilazion.aries_transaction.settlement.domain.exception.SettlementIdempotencyConflictException;
 import com.actilazion.aries_transaction.settlement.infrastructure.SettlementBatchRepository;
@@ -206,6 +207,83 @@ class SettlementServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("Post-settlement refund creates an adjustment item and reverse settlement ledger")
+    void createBatch_postSettlementRefund_createsAdjustmentItemAndLedger() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        settlementService.createBatch(
+                "VND",
+                200,
+                "settle-key-original-refund",
+                transfer.completedAt().plusSeconds(1),
+                operator.getEmail()
+        );
+
+        var refund = transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("500000"), UUID.randomUUID().toString(), "Refund after settlement"),
+                operator.getEmail()
+        );
+
+        var adjustment = settlementService.createBatch(
+                "VND",
+                200,
+                "settle-key-adjustment-refund",
+                refund.completedAt().plusSeconds(1),
+                operator.getEmail()
+        );
+
+        assertThat(adjustment.items()).hasSize(1);
+        var item = adjustment.items().getFirst();
+        assertThat(item.transactionId()).isEqualTo(refund.id());
+        assertThat(item.itemType()).isEqualTo(SettlementItemType.ADJUSTMENT);
+        assertThat(item.receiverAccountId()).isEqualTo(receiverAccount.getId());
+        assertThat(item.grossAmount()).isEqualByComparingTo("500000");
+        assertThat(item.feeAmount()).isEqualByComparingTo("10000");
+        assertThat(item.netAmount()).isEqualByComparingTo("490000");
+        assertThat(adjustment.grossAmount()).isEqualByComparingTo("500000");
+        assertThat(adjustment.feeAmount()).isEqualByComparingTo("10000");
+        assertThat(adjustment.netAmount()).isEqualByComparingTo("490000");
+        assertSettlementAdjustmentLedgerBalanced(refund.id(), "500000", "490000", "10000");
+    }
+
+    @Test
+    @DisplayName("Post-settlement reversal creates a full adjustment item")
+    void createBatch_postSettlementReversal_createsAdjustmentItem() {
+        var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());
+        settlementService.createBatch(
+                "VND",
+                200,
+                "settle-key-original-reversal",
+                transfer.completedAt().plusSeconds(1),
+                operator.getEmail()
+        );
+
+        var reversal = transferService.reverse(
+                transfer.id(),
+                new ReversalRequest(UUID.randomUUID().toString(), "Reverse after settlement"),
+                operator.getEmail()
+        );
+
+        var adjustment = settlementService.createBatch(
+                "VND",
+                200,
+                "settle-key-adjustment-reversal",
+                reversal.completedAt().plusSeconds(1),
+                operator.getEmail()
+        );
+
+        assertThat(adjustment.items()).hasSize(1);
+        var item = adjustment.items().getFirst();
+        assertThat(item.transactionId()).isEqualTo(reversal.id());
+        assertThat(item.itemType()).isEqualTo(SettlementItemType.ADJUSTMENT);
+        assertThat(item.receiverAccountId()).isEqualTo(receiverAccount.getId());
+        assertThat(item.grossAmount()).isEqualByComparingTo("1000000");
+        assertThat(item.feeAmount()).isEqualByComparingTo("20000");
+        assertThat(item.netAmount()).isEqualByComparingTo("980000");
+        assertSettlementAdjustmentLedgerBalanced(reversal.id(), "1000000", "980000", "20000");
+    }
+
+    @Test
     @DisplayName("Settlement cutoff excludes transactions completed after cutoff")
     void createBatch_cutoff_excludesLaterTransactions() {
         var included = transferService.transfer(transferRequest("1000000"), sender.getEmail());
@@ -313,6 +391,37 @@ class SettlementServiceIntegrationTest {
                 .satisfies(entry -> assertThat(entry.getAmount()).isEqualByComparingTo(grossAmount));
         assertThat(entries)
                 .filteredOn(entry -> entry.getDirection() == LedgerDirection.CREDIT)
+                .anySatisfy(entry -> assertThat(entry.getAmount()).isEqualByComparingTo(receiverPayable))
+                .anySatisfy(entry -> assertThat(entry.getAmount()).isEqualByComparingTo(platformRevenue));
+
+        BigDecimal debit = entries.stream()
+                .filter(entry -> entry.getDirection() == LedgerDirection.DEBIT)
+                .map(entry -> entry.getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal credit = entries.stream()
+                .filter(entry -> entry.getDirection() == LedgerDirection.CREDIT)
+                .map(entry -> entry.getAmount())
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertThat(debit).isEqualByComparingTo(credit);
+    }
+
+    private void assertSettlementAdjustmentLedgerBalanced(
+            UUID transactionId,
+            String grossAmount,
+            String receiverPayable,
+            String platformRevenue
+    ) {
+        var entries = ledgerEntryRepository.findAllByTransactionId(transactionId).stream()
+                .filter(entry -> entry.getEntryType() == LedgerEntryType.ADJUSTMENT)
+                .toList();
+
+        assertThat(entries).hasSize(3);
+        assertThat(entries)
+                .filteredOn(entry -> entry.getDirection() == LedgerDirection.CREDIT)
+                .singleElement()
+                .satisfies(entry -> assertThat(entry.getAmount()).isEqualByComparingTo(grossAmount));
+        assertThat(entries)
+                .filteredOn(entry -> entry.getDirection() == LedgerDirection.DEBIT)
                 .anySatisfy(entry -> assertThat(entry.getAmount()).isEqualByComparingTo(receiverPayable))
                 .anySatisfy(entry -> assertThat(entry.getAmount()).isEqualByComparingTo(platformRevenue));
 

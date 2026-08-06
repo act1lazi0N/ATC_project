@@ -35,11 +35,11 @@ class OutboxWorkerTest {
                 .status(OutboxEventStatus.PENDING)
                 .build();
 
-        when(outboxEventService.findPendingEvents(25)).thenReturn(List.of(event));
+        when(outboxEventService.claimPublishableEvents(25)).thenReturn(List.of(event));
 
         worker.publishPendingEvents();
 
         verify(outboxEventService, never()).markPublished(any());
-        verify(outboxEventService, never()).markFailed(any());
+        verify(outboxEventService).markFailed(event.getId(), "Publisher did not confirm delivery");
     }
 }

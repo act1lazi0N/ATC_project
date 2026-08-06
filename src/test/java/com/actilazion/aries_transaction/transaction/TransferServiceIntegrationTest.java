@@ -15,6 +15,7 @@ import com.actilazion.aries_transaction.outbox.domain.OutboxEventStatus;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecordStatus;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
+import com.actilazion.aries_transaction.transaction.domain.TransactionOperation;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.domain.exception.AccountNotActiveException;
 import com.actilazion.aries_transaction.transaction.domain.exception.CurrencyMismatchException;
@@ -171,7 +172,7 @@ public class TransferServiceIntegrationTest {
                 new BigDecimal("1000000"),
                 UUID.randomUUID().toString(),
                 "VND",
-                "Trả tiền ăn"
+                "Dinner reimbursement"
         );
 
         var response = transferService.transfer(request, sender.getEmail());
@@ -591,6 +592,48 @@ public class TransferServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("Same idempotency key can be reused by same initiator for different operations")
+    void idempotency_sameKeySameInitiatorDifferentOperation_success() {
+        var originalTransfer = transferService.transfer(transferToMerchantReceiverRequest("1000000"), sender.getEmail());
+        String sameKey = UUID.randomUUID().toString();
+
+        var merchantTransfer = transferService.transfer(
+                new TransferRequest(
+                        merchantReceiverAccount.getId().toString(),
+                        senderAccount.getId().toString(),
+                        new BigDecimal("100000"),
+                        sameKey,
+                        "VND",
+                        "merchant transfer"
+                ),
+                merchantReceiver.getEmail()
+        );
+        var refund = transferService.refund(
+                originalTransfer.id(),
+                new RefundRequest(new BigDecimal("500000"), sameKey, "merchant refund"),
+                merchantReceiver.getEmail()
+        );
+
+        em.flush();
+        em.clear();
+
+        assertThat(merchantTransfer.id()).isNotEqualTo(refund.id());
+        List<Transaction> scopedTransactions = transactionRepository.findAll().stream()
+                .filter(transaction -> sameKey.equals(transaction.getIdempotencyKey()))
+                .toList();
+
+        assertThat(scopedTransactions).hasSize(2);
+        assertThat(scopedTransactions)
+                .extracting(Transaction::getOperation)
+                .containsExactlyInAnyOrder(TransactionOperation.TRANSFER, TransactionOperation.REFUND);
+        assertThat(idempotencyRecordRepository.findAll().stream()
+                .filter(record -> sameKey.equals(record.getIdempotencyKey()))
+                .map(record -> record.getOperation())
+                .toList())
+                .containsExactlyInAnyOrder(TransactionOperation.TRANSFER.name(), TransactionOperation.REFUND.name());
+    }
+
+    @Test
     @DisplayName("Duplicated Idempotency key with different request -> IdempotencyConflictException")
     void transfer_duplicateIdempotencyKeyWithDifferentRequest_throwsConflict() {
         String sameKey = UUID.randomUUID().toString();
@@ -889,6 +932,38 @@ public class TransferServiceIntegrationTest {
         assertThat(refunded.getStatus()).isEqualTo(TransactionStatus.REFUNDED);
         assertThat(refunded.getRefundedAmount()).isEqualByComparingTo("1000000");
         assertThat(fullRefund.originalTransactionId()).isEqualTo(transfer.id());
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("5000000");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1000000");
+        assertThat(transactionRepository.count()).isEqualTo(3);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(6);
+        assertThat(outboxEventRepository.count()).isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("Refund allows final remaining amount below transfer minimum")
+    void refund_remainingBelowTransferMinimum_success() {
+        var transfer = transferService.transfer(transferRequest("1500"), sender.getEmail());
+
+        transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("1000"), UUID.randomUUID().toString(), "Partial refund"),
+                operator.getEmail()
+        );
+        var finalRefund = transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("500"), UUID.randomUUID().toString(), "Remaining refund"),
+                operator.getEmail()
+        );
+
+        em.flush();
+        em.clear();
+
+        var original = transactionRepository.findById(transfer.id()).orElseThrow();
+        assertThat(finalRefund.originalTransactionId()).isEqualTo(transfer.id());
+        assertThat(original.getStatus()).isEqualTo(TransactionStatus.REFUNDED);
+        assertThat(original.getRefundedAmount()).isEqualByComparingTo("1500");
         assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
                 .isEqualByComparingTo("5000000");
         assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())

@@ -211,6 +211,95 @@ class SettlementServiceIntegrationTest {
     }
 
     @Test
+    @DisplayName("Pre-settlement partial refund settles only the outstanding transfer amount")
+    void createBatch_preSettlementPartialRefund_settlesOutstandingAmount() {
+        var transfer = transferService.transfer(transferRequest("1000.00"), sender.getEmail());
+        var refund = transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400.00"), UUID.randomUUID().toString(), "Refund before settlement"),
+                operator.getEmail()
+        );
+
+        var batch = settlementService.createBatch(
+                "VND",
+                200,
+                "settle-key-pre-settlement-partial-refund",
+                refund.completedAt().plusSeconds(1),
+                operator.getEmail()
+        );
+
+        assertThat(batch.items()).hasSize(1);
+        var item = batch.items().getFirst();
+        assertThat(item.transactionId()).isEqualTo(transfer.id());
+        assertThat(item.itemType()).isEqualTo(SettlementItemType.NORMAL);
+        assertThat(item.receiverAccountId()).isEqualTo(receiverAccount.getId());
+        assertThat(item.grossAmount()).isEqualByComparingTo("600.00");
+        assertThat(item.feeAmount()).isEqualByComparingTo("12.00");
+        assertThat(item.netAmount()).isEqualByComparingTo("588.00");
+        assertThat(batch.grossAmount()).isEqualByComparingTo("600.00");
+        assertThat(batch.feeAmount()).isEqualByComparingTo("12.00");
+        assertThat(batch.netAmount()).isEqualByComparingTo("588.00");
+        assertSettlementLedgerBalanced(transfer.id(), "600.00", "588.00", "12.00");
+        assertThat(ledgerEntryRepository.countByTransactionIdAndEntryType(
+                refund.id(),
+                LedgerEntryType.ADJUSTMENT
+        )).isZero();
+
+        assertThatThrownBy(() -> settlementService.createBatch(
+                "VND",
+                200,
+                "settle-key-pre-settlement-partial-refund-next",
+                refund.completedAt().plusSeconds(2),
+                operator.getEmail()
+        )).isInstanceOf(NoSettlementCandidateException.class);
+    }
+
+    @Test
+    @DisplayName("Post-settlement refund after pre-settlement partial refund creates adjustment for new refund only")
+    void createBatch_postSettlementRefundAfterPreSettlementPartialRefund_adjustsOnlyNewRefund() {
+        var transfer = transferService.transfer(transferRequest("1000.00"), sender.getEmail());
+        var preSettlementRefund = transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400.00"), UUID.randomUUID().toString(), "Refund before settlement"),
+                operator.getEmail()
+        );
+        settlementService.createBatch(
+                "VND",
+                200,
+                "settle-key-mixed-refund-original",
+                preSettlementRefund.completedAt().plusSeconds(1),
+                operator.getEmail()
+        );
+
+        var postSettlementRefund = transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("100.00"), UUID.randomUUID().toString(), "Refund after settlement"),
+                operator.getEmail()
+        );
+
+        var adjustment = settlementService.createBatch(
+                "VND",
+                200,
+                "settle-key-mixed-refund-adjustment",
+                postSettlementRefund.completedAt().plusSeconds(1),
+                operator.getEmail()
+        );
+
+        assertThat(adjustment.items()).hasSize(1);
+        var item = adjustment.items().getFirst();
+        assertThat(item.transactionId()).isEqualTo(postSettlementRefund.id());
+        assertThat(item.itemType()).isEqualTo(SettlementItemType.ADJUSTMENT);
+        assertThat(item.grossAmount()).isEqualByComparingTo("100.00");
+        assertThat(item.feeAmount()).isEqualByComparingTo("2.00");
+        assertThat(item.netAmount()).isEqualByComparingTo("98.00");
+        assertSettlementAdjustmentLedgerBalanced(postSettlementRefund.id(), "100.00", "98.00", "2.00");
+        assertThat(ledgerEntryRepository.countByTransactionIdAndEntryType(
+                preSettlementRefund.id(),
+                LedgerEntryType.ADJUSTMENT
+        )).isZero();
+    }
+
+    @Test
     @DisplayName("Post-settlement refund creates an adjustment item and reverse settlement ledger")
     void createBatch_postSettlementRefund_createsAdjustmentItemAndLedger() {
         var transfer = transferService.transfer(transferRequest("1000000"), sender.getEmail());

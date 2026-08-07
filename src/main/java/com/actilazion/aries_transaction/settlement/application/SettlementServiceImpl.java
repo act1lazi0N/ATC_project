@@ -18,6 +18,7 @@ import com.actilazion.aries_transaction.settlement.domain.exception.SettlementId
 import com.actilazion.aries_transaction.settlement.infrastructure.SettlementBatchRepository;
 import com.actilazion.aries_transaction.settlement.infrastructure.SettlementItemRepository;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
+import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -143,7 +144,7 @@ public class SettlementServiceImpl implements SettlementService {
             Map<UUID, OriginalSettlementContext> adjustmentContexts
     ) {
         SettlementItemType itemType = itemTypeFor(transaction);
-        BigDecimal grossAmount = transaction.getAmount();
+        BigDecimal grossAmount = settlementGrossAmount(transaction);
         if (itemType == SettlementItemType.NORMAL) {
             BigDecimal feeAmount = calculateFee(grossAmount, feeRateBps);
             SettlementAmounts amounts = new SettlementAmounts(grossAmount, feeAmount, grossAmount.subtract(feeAmount));
@@ -158,6 +159,17 @@ public class SettlementServiceImpl implements SettlementService {
         context.recordAdjustment(grossAmount, feeAmount);
         SettlementAmounts amounts = new SettlementAmounts(grossAmount, feeAmount, grossAmount.subtract(feeAmount));
         return new SettlementItemPlan(context.originalItem().getReceiverAccount(), itemType, amounts);
+    }
+
+    private BigDecimal settlementGrossAmount(Transaction transaction) {
+        if (transaction.getOriginalTransaction() == null
+                && transaction.getStatus() == TransactionStatus.PARTIALLY_REFUNDED) {
+            BigDecimal refundedAmount = transaction.getRefundedAmount() != null
+                    ? transaction.getRefundedAmount()
+                    : BigDecimal.ZERO;
+            return transaction.getAmount().subtract(refundedAmount);
+        }
+        return transaction.getAmount();
     }
 
     private BigDecimal calculateAdjustmentFee(BigDecimal grossAmount, OriginalSettlementContext context) {

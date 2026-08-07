@@ -103,4 +103,16 @@ class TransactionStateTransitionTest {
 
         assertThat(tx.getStatus()).isEqualTo(TransactionStatus.REFUNDED);
     }
+
+    @Test
+    @DisplayName("PARTIALLY_REFUNDED transaction can remain PARTIALLY_REFUNDED")
+    void partiallyRefundedToPartiallyRefunded_success() {
+        Transaction tx = Transaction.builder()
+                .status(TransactionStatus.PARTIALLY_REFUNDED)
+                .build();
+
+        tx.markPartiallyRefunded();
+
+        assertThat(tx.getStatus()).isEqualTo(TransactionStatus.PARTIALLY_REFUNDED);
+    }
 }

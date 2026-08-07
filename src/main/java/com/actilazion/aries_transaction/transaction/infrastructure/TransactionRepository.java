@@ -36,8 +36,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
     @Query("""
     SELECT t FROM Transaction t
-    WHERE t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.COMPLETED
-      AND t.currency = :currency
+    WHERE t.currency = :currency
       AND t.completedAt <= :cutoffCompletedAt
       AND NOT EXISTS (
           SELECT 1 FROM SettlementItem item
@@ -46,17 +45,30 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
       AND (
           (
               t.originalTransaction IS NULL
-              AND NOT EXISTS (
-                  SELECT 1 FROM Transaction related
-                  WHERE related.originalTransaction = t
+              AND (
+                  (
+                      t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.COMPLETED
+                      AND NOT EXISTS (
+                          SELECT 1 FROM Transaction related
+                          WHERE related.originalTransaction = t
+                            AND related.completedAt <= :cutoffCompletedAt
+                      )
+                  )
+                  OR (
+                      t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.PARTIALLY_REFUNDED
+                      AND t.amount > t.refundedAmount
+                  )
               )
           )
           OR (
+              t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.COMPLETED
+              AND
               t.originalTransaction IS NOT NULL
               AND EXISTS (
                   SELECT 1 FROM SettlementItem originalItem
                   WHERE originalItem.transaction = t.originalTransaction
                     AND originalItem.itemType = com.actilazion.aries_transaction.settlement.domain.SettlementItemType.NORMAL
+                    AND t.completedAt > originalItem.createdAt
               )
           )
       )

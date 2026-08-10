@@ -8,7 +8,7 @@ import com.actilazion.aries_transaction.audit.application.AuditLogService;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
-import com.actilazion.aries_transaction.ledger.application.LedgerService;
+import com.actilazion.aries_transaction.ledger.application.LedgerServiceImpl;
 import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
 import com.actilazion.aries_transaction.reconciliation.application.ReconciliationPolicyProperties;
 import com.actilazion.aries_transaction.reconciliation.application.ReconciliationRunPersistenceService;
@@ -52,7 +52,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         TransferServiceImpl.class,
         AuditLogService.class,
         OutboxEventService.class,
-        LedgerService.class,
+        LedgerServiceImpl.class,
         IdempotencyService.class,
         ReconciliationPolicyProperties.class,
         ReconciliationRunPersistenceService.class,

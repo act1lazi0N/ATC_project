@@ -32,6 +32,8 @@ class RefreshSessionIntegrationTest {
         assertThat(refreshSessionRepository.countByUserId(initial.user().id())).isEqualTo(2);
         assertThatThrownBy(() -> authService.refresh(initial.refreshToken()))
                 .hasMessage("Unauthorized");
+        assertThatThrownBy(() -> authService.refresh(rotated.refreshToken()))
+                .hasMessage("Unauthorized");
     }
 
     @Test

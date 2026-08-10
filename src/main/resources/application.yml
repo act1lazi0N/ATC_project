@@ -41,6 +41,14 @@ jwt:
   audience: ${JWT_AUDIENCE:aries-transaction-api}
   token-type: access
 
+security:
+  auth-rate-limit:
+    window-seconds: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:60}
+    ip-requests: ${AUTH_RATE_LIMIT_IP_REQUESTS:60}
+    identity-requests: ${AUTH_RATE_LIMIT_IDENTITY_REQUESTS:10}
+  refresh-cookie:
+    allowed-origins: ${AUTH_REFRESH_ALLOWED_ORIGINS:http://localhost:3000}
+
 springdoc:
   api-docs:
     enabled: ${SPRINGDOC_API_DOCS_ENABLED:false}

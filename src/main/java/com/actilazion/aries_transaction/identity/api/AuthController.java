@@ -8,6 +8,8 @@ import com.actilazion.aries_transaction.identity.dto.UserResponse;
 import com.actilazion.aries_transaction.identity.application.AuthService;
 import com.actilazion.aries_transaction.identity.application.AuthenticatedUserPrincipal;
 import com.actilazion.aries_transaction.config.JwtConfig;
+import com.actilazion.aries_transaction.config.AuthRateLimiter;
+import com.actilazion.aries_transaction.config.RefreshCookiePolicy;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -22,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import jakarta.servlet.http.HttpServletRequest;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -31,29 +34,41 @@ public class AuthController {
     private static final String REFRESH_COOKIE = "refresh_token";
     private final AuthService authService;
     private final JwtConfig jwtConfig;
+    private final AuthRateLimiter authRateLimiter;
+    private final RefreshCookiePolicy refreshCookiePolicy;
 
     @PostMapping("/register")
     @Operation(summary = "Register a new user account")
     public ResponseEntity<ApiResponse<AuthResponse>> register(
-            @Valid @RequestBody RegisterRequest request
+            @Valid @RequestBody RegisterRequest request,
+            HttpServletRequest httpRequest
     ) {
-        return withRefreshCookie(HttpStatus.CREATED, "User registered successfully", authService.register(request));
+        authRateLimiter.check("register", httpRequest, request.email());
+        return withRefreshCookie(HttpStatus.CREATED, "User registered successfully",
+                authService.register(request, httpRequest.getRemoteAddr()));
     }
 
     @PostMapping("/login")
     @Operation(summary = "Login an receive a JWT token")
     public ResponseEntity<ApiResponse<AuthResponse>> login(
-            @Valid @RequestBody LoginRequest request
+            @Valid @RequestBody LoginRequest request,
+            HttpServletRequest httpRequest
     ) {
-        return withRefreshCookie(HttpStatus.OK, "Login successful", authService.login(request));
+        authRateLimiter.check("login", httpRequest, request.email());
+        return withRefreshCookie(HttpStatus.OK, "Login successful",
+                authService.login(request, httpRequest.getRemoteAddr()));
     }
 
     @PostMapping("/refresh")
     @Operation(summary = "Rotate the refresh session and issue a new access token")
     public ResponseEntity<ApiResponse<AuthResponse>> refresh(
-            @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken
+            @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken,
+            HttpServletRequest httpRequest
     ) {
-        return withRefreshCookie(HttpStatus.OK, "Token refreshed", authService.refresh(refreshToken));
+        refreshCookiePolicy.enforce(httpRequest);
+        authRateLimiter.check("refresh", httpRequest, refreshToken);
+        return withRefreshCookie(HttpStatus.OK, "Token refreshed",
+                authService.refresh(refreshToken, httpRequest.getRemoteAddr()));
     }
 
     @PostMapping("/logout")

@@ -2,6 +2,8 @@ package com.actilazion.aries_transaction.identity.application;
 
 import com.actilazion.aries_transaction.common.exception.AppException;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
+import com.actilazion.aries_transaction.audit.application.IdentityAuditService;
+import com.actilazion.aries_transaction.audit.domain.IdentityAuditEventType;
 import com.actilazion.aries_transaction.config.JwtConfig;
 import com.actilazion.aries_transaction.config.JwtService;
 import com.actilazion.aries_transaction.config.LoginProtectionConfig;
@@ -31,6 +33,7 @@ import java.time.OffsetDateTime;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.UUID;
+import java.util.Map;
 
 @Slf4j
 @Service
@@ -43,14 +46,23 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager authenticationManager;
     private final RefreshSessionRepository refreshSessionRepository;
     private final LoginProtectionConfig loginProtectionConfig;
+    private final IdentityAuditService identityAuditService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     @Transactional
     @Override
     public AuthResponse register(RegisterRequest request) {
+        return register(request, null);
+    }
+
+    @Override
+    @Transactional
+    public AuthResponse register(RegisterRequest request, String ipAddress) {
         String email = normalizeEmail(request.email());
+        validatePasswordLength(request.password());
         if (userRepository.existsByEmail(email)) {
-            throw new AppException("Email already registered", HttpStatus.CONFLICT) {};
+            identityAuditService.record(IdentityAuditEventType.REGISTRATION_REJECTED, null, email, ipAddress, Map.of());
+            throw new AppException("Registration request cannot be completed", HttpStatus.CONFLICT) {};
         }
 
         User user = User.builder()
@@ -60,6 +72,7 @@ public class AuthServiceImpl implements AuthService {
                 .build();
         userRepository.save(user);
         log.info("[AUTH] User registered id: {}", user.getId());
+        identityAuditService.record(IdentityAuditEventType.REGISTERED, user.getId(), email, ipAddress, Map.of());
 
         return issueSession(user);
     }
@@ -67,9 +80,17 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional(noRollbackFor = AuthenticationException.class)
     public AuthResponse login(LoginRequest request) {
+        return login(request, null);
+    }
+
+    @Override
+    @Transactional(noRollbackFor = AuthenticationException.class)
+    public AuthResponse login(LoginRequest request, String ipAddress) {
         String email = normalizeEmail(request.email());
+        validatePasswordLength(request.password());
         User user = userRepository.findByEmailWithLock(email).orElse(null);
         if (user != null && isLocked(user, OffsetDateTime.now())) {
+            identityAuditService.record(IdentityAuditEventType.LOGIN_LOCKED, user.getId(), email, ipAddress, Map.of());
             throw unauthorized();
         }
 
@@ -79,8 +100,12 @@ public class AuthServiceImpl implements AuthService {
             );
         } catch (AuthenticationException ex) {
             if (user != null) {
-                recordFailedLogin(user, OffsetDateTime.now());
+                boolean locked = recordFailedLogin(user, OffsetDateTime.now());
                 userRepository.save(user);
+                identityAuditService.record(locked ? IdentityAuditEventType.LOGIN_LOCKED : IdentityAuditEventType.LOGIN_FAILED,
+                        user.getId(), email, ipAddress, Map.of());
+            } else {
+                identityAuditService.record(IdentityAuditEventType.LOGIN_FAILED, null, email, ipAddress, Map.of());
             }
             throw ex;
         }
@@ -89,27 +114,40 @@ public class AuthServiceImpl implements AuthService {
         user.setFailedLoginAttempts(0);
         user.setLockedUntil(null);
         userRepository.save(user);
+        identityAuditService.record(IdentityAuditEventType.LOGIN_SUCCEEDED, user.getId(), email, ipAddress, Map.of());
         return issueSession(user);
     }
 
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = AppException.class)
     public AuthResponse refresh(String refreshToken) {
+        return refresh(refreshToken, null);
+    }
+
+    @Override
+    @Transactional(noRollbackFor = AppException.class)
+    public AuthResponse refresh(String refreshToken, String ipAddress) {
         if (refreshToken == null || refreshToken.isBlank()) {
+            identityAuditService.record(IdentityAuditEventType.REFRESH_REJECTED, null, null, ipAddress, Map.of());
             throw unauthorized();
         }
 
-        RefreshSession current = refreshSessionRepository.findByTokenHashForUpdate(hash(refreshToken))
-                .orElseThrow(this::unauthorized);
+        RefreshSession current = refreshSessionRepository.findByTokenHashForUpdate(hash(refreshToken)).orElse(null);
+        if (current == null) {
+            identityAuditService.record(IdentityAuditEventType.REFRESH_REJECTED, null, null, ipAddress, Map.of());
+            throw unauthorized();
+        }
         OffsetDateTime now = OffsetDateTime.now();
         User user = current.getUser();
 
         if (current.getRevokedAt() != null) {
             refreshSessionRepository.revokeActiveByUserId(user.getId(), now);
+            identityAuditService.record(IdentityAuditEventType.REFRESH_REUSE_DETECTED, user.getId(), null, ipAddress, Map.of());
             throw unauthorized();
         }
         if (current.getExpiresAt().isBefore(now) || !Boolean.TRUE.equals(user.getIsActive())) {
             current.setRevokedAt(now);
+            identityAuditService.record(IdentityAuditEventType.REFRESH_REJECTED, user.getId(), null, ipAddress, Map.of());
             throw unauthorized();
         }
 
@@ -120,6 +158,7 @@ public class AuthServiceImpl implements AuthService {
         refreshSessionRepository.save(replacement);
         current.setReplacedBy(replacement);
         refreshSessionRepository.save(current);
+        identityAuditService.record(IdentityAuditEventType.REFRESH_SUCCEEDED, user.getId(), null, ipAddress, Map.of());
 
         return AuthResponse.withRefresh(
                 jwtService.generateToken(AuthenticatedUserPrincipal.from(user)),
@@ -135,6 +174,7 @@ public class AuthServiceImpl implements AuthService {
         refreshSessionRepository.findByTokenHashForUpdate(hash(refreshToken))
                 .filter(session -> session.getUser().getId().equals(userId))
                 .ifPresent(session -> session.setRevokedAt(OffsetDateTime.now()));
+        identityAuditService.record(IdentityAuditEventType.LOGOUT, userId, null, null, Map.of());
     }
 
     @Override
@@ -180,12 +220,20 @@ public class AuthServiceImpl implements AuthService {
         return new AppException("Unauthorized", HttpStatus.UNAUTHORIZED) {};
     }
 
-    private void recordFailedLogin(User user, OffsetDateTime now) {
+    private boolean recordFailedLogin(User user, OffsetDateTime now) {
         int attempts = user.getFailedLoginAttempts() + 1;
         user.setFailedLoginAttempts(attempts);
         if (attempts >= loginProtectionConfig.getMaxFailedAttempts()) {
             user.setLockedUntil(now.plusSeconds(loginProtectionConfig.getLockDurationSeconds()));
             log.warn("[AUTH] Login temporarily locked userId={}", user.getId());
+            return true;
+        }
+        return false;
+    }
+
+    private void validatePasswordLength(String password) {
+        if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
+            throw new AppException("Password must not exceed 72 UTF-8 bytes", HttpStatus.BAD_REQUEST) {};
         }
     }
 

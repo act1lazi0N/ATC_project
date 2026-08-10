@@ -20,13 +20,14 @@ import java.util.concurrent.ThreadLocalRandom;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class AccountCreationAttemptService {
+public class AccountCreationAttemptService implements AccountCreationAttempt {
     private static final long ACCOUNT_NUMBER_BOUND = 1_000_000_000_000L;
 
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Override
     public AccountResponse create(CreateAccountRequest request, String ownerEmail) {
         User owner = userRepository.findByEmail(ownerEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User", ownerEmail));

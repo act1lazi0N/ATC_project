@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
 public class ReconciliationServiceImpl implements ReconciliationService {
     private final TransactionRepository transactionRepository;
     private final ReconciliationRunRepository reconciliationRunRepository;
-    private final ReconciliationRunPersistenceService runPersistenceService;
+    private final ReconciliationRunPersistence runPersistence;
     private final ReportingTransactionSnapshotClient reportingSnapshotClient;
     private final UserRepository userRepository;
     private final ReconciliationPolicyProperties policyProperties;
@@ -66,7 +66,7 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                 .build();
 
         compareSourceAndReporting(run, sourceTransactions, reportingSnapshots);
-        return runPersistenceService.saveCompleted(
+        return runPersistence.saveCompleted(
                 run,
                 sourceTransactions.size(),
                 reportingSnapshots.size()

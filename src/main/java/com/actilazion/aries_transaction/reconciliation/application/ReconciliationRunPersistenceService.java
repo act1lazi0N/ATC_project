@@ -11,10 +11,11 @@ import java.time.OffsetDateTime;
 
 @Service
 @RequiredArgsConstructor
-public class ReconciliationRunPersistenceService {
+public class ReconciliationRunPersistenceService implements ReconciliationRunPersistence {
     private final ReconciliationRunRepository reconciliationRunRepository;
 
     @Transactional
+    @Override
     public ReconciliationRunResponse saveCompleted(
             ReconciliationRun run,
             int sourceTransactionCount,

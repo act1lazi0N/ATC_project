@@ -30,14 +30,14 @@ public class AccountServiceImpl implements AccountService {
 
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
-    private final AccountCreationAttemptService accountCreationAttemptService;
+    private final AccountCreationAttempt accountCreationAttempt;
 
     @Override
     public AccountResponse create(CreateAccountRequest request, String ownerEmail) {
         validatePublicAccountType(request.accountType());
         for (int attempt = 1; attempt <= ACCOUNT_NUMBER_MAX_ATTEMPTS; attempt++) {
             try {
-                return accountCreationAttemptService.create(request, ownerEmail);
+                return accountCreationAttempt.create(request, ownerEmail);
             } catch (DataIntegrityViolationException ex) {
                 if (!isAccountNumberCollision(ex)) {
                     throw ex;

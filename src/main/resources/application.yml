@@ -33,7 +33,10 @@ spring:
 
 jwt:
   secret: ${JWT_SECRET}
-  expiration: 86400
+  expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:900}
+  refresh-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:2592000}
+  refresh-cookie-secure: ${JWT_REFRESH_COOKIE_SECURE:true}
+  refresh-cookie-same-site: ${JWT_REFRESH_COOKIE_SAME_SITE:Strict}
   issuer: ${JWT_ISSUER:aries-transaction}
   audience: ${JWT_AUDIENCE:aries-transaction-api}
   token-type: access
@@ -59,6 +62,11 @@ app:
       snapshots-path: ${RECONCILIATION_REPORTING_SNAPSHOTS_PATH:/api/v1/reporting/transactions/snapshots}
       connect-timeout: ${RECONCILIATION_REPORTING_CONNECT_TIMEOUT:2s}
       read-timeout: ${RECONCILIATION_REPORTING_READ_TIMEOUT:5s}
+
+identity:
+  login:
+    max-failed-attempts: ${IDENTITY_LOGIN_MAX_FAILED_ATTEMPTS:5}
+    lock-duration-seconds: ${IDENTITY_LOGIN_LOCK_DURATION_SECONDS:900}
 
 logging:
   level:

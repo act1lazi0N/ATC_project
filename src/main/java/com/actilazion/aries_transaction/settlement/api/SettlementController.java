@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,6 +31,7 @@ public class SettlementController {
     private final SettlementService settlementService;
 
     @PostMapping("/batches")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")
     @Operation(summary = "Create a settlement batch from completed unsettled transactions")
     public ResponseEntity<ApiResponse<SettlementBatchResponse>> createBatch(
             @Valid @RequestBody CreateSettlementBatchRequest request,
@@ -46,6 +48,7 @@ public class SettlementController {
     }
 
     @GetMapping("/batches/{id}")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")
     @Operation(summary = "Get settlement batch detail")
     public ResponseEntity<ApiResponse<SettlementBatchResponse>> getBatch(
             @PathVariable UUID id,

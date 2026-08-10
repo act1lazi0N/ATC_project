@@ -9,9 +9,9 @@ import java.util.UUID;
 public interface AccountService {
     AccountResponse create(CreateAccountRequest request, String ownerEmail);
 
-    AccountResponse getById(UUID accountId);
+    AccountResponse getById(UUID accountId, String requesterEmail);
 
     List<AccountResponse> getMyAccounts(String ownerEmail);
 
-    AccountResponse freeze(UUID accountId);
+    AccountResponse freeze(UUID accountId, String requesterEmail);
 }

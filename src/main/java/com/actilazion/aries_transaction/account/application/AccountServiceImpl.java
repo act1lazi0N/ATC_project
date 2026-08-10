@@ -7,8 +7,10 @@ import com.actilazion.aries_transaction.account.domain.AccountType;
 import com.actilazion.aries_transaction.account.domain.exception.AccountNumberGenerationException;
 import com.actilazion.aries_transaction.account.domain.exception.InternalAccountTypeException;
 import com.actilazion.aries_transaction.identity.domain.User;
+import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.account.domain.AccountStatus;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
+import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
 import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -73,10 +75,17 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     @Transactional(readOnly = true)
-    public AccountResponse getById(UUID accountId) {
-        return accountRepository.findById(accountId)
-                .map(AccountResponse::from)
+    public AccountResponse getById(UUID accountId, String requesterEmail) {
+        Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
+        User requester = userRepository.findByEmail(requesterEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User", requesterEmail));
+        if (!account.getUser().getId().equals(requester.getId())
+                && requester.getRole() != Role.OPERATOR
+                && requester.getRole() != Role.ADMIN) {
+            throw new ForbiddenOperationException("Not allowed to read this account");
+        }
+        return AccountResponse.from(account);
     }
 
     @Override
@@ -92,7 +101,13 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     @Transactional
-    public AccountResponse freeze(UUID accountId) {
+    public AccountResponse freeze(UUID accountId, String requesterEmail) {
+        User requester = userRepository.findByEmail(requesterEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User", requesterEmail));
+        if (requester.getRole() != Role.OPERATOR
+                && requester.getRole() != Role.ADMIN) {
+            throw new ForbiddenOperationException("Not allowed to freeze this account");
+        }
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
         account.setStatus(AccountStatus.FROZEN);

@@ -28,7 +28,10 @@ logging:
 
 jwt:
   secret: dGhpcyBpcyBhIHZlcnkgbG9uZyBzZWNyZXQga2V5IGZvciB0ZXN0cw==
-  expiration: 86400
+  expiration: 900
+  refresh-expiration: 2592000
+  refresh-cookie-secure: false
+  refresh-cookie-same-site: Strict
   issuer: aries-transaction
   audience: aries-transaction-api
   token-type: access
@@ -42,3 +45,8 @@ app:
   reconciliation:
     expected-lag: PT0S
     max-window: P31D
+
+identity:
+  login:
+    max-failed-attempts: 3
+    lock-duration-seconds: 900

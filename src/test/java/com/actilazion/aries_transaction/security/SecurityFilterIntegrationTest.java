@@ -4,6 +4,7 @@ import com.actilazion.aries_transaction.config.JwtService;
 import com.actilazion.aries_transaction.config.JwtConfig;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
+import com.actilazion.aries_transaction.identity.application.AuthenticatedUserPrincipal;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
@@ -191,6 +192,17 @@ class SecurityFilterIntegrationTest {
         assertThat(response.statusCode()).isEqualTo(401);
     }
 
+    @Test
+    void me_returnsAuthenticatedUserFromUuidSubject() throws Exception {
+        User user = savedUser(Role.USER, true);
+
+        HttpResponse<String> response = get("/api/v1/auth/me", tokenFor(user));
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains(user.getId().toString());
+        assertThat(response.body()).contains(user.getEmail());
+    }
+
     private User savedUser(Role role, boolean active) {
         return userRepository.save(User.builder()
                 .fullName("Security Test User")
@@ -202,12 +214,7 @@ class SecurityFilterIntegrationTest {
     }
 
     private String tokenFor(User user) {
-        UserDetails principal = org.springframework.security.core.userdetails.User
-                .withUsername(user.getEmail())
-                .password(user.getPasswordHash())
-                .roles(user.getRole().name())
-                .build();
-        return jwtService.generateToken(principal);
+        return jwtService.generateToken(AuthenticatedUserPrincipal.from(user));
     }
 
     private String signedToken(User user, String issuer, String audience, String tokenType) {

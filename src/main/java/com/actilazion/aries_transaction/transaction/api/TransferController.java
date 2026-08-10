@@ -16,6 +16,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
@@ -40,6 +41,7 @@ public class TransferController {
     }
 
     @PostMapping("/{id}/reverse")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")
     @Operation(summary = "Reverse a completed transaction")
     public ResponseEntity<ApiResponse<TransactionResponse>> reverse(
             @PathVariable("id") UUID id,

@@ -3,7 +3,6 @@ package com.actilazion.aries_transaction.identity.application;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.NonNull;
-import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -17,12 +16,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     @Override
     public UserDetails loadUserByUsername(@NonNull String email) throws UsernameNotFoundException {
         return userRepository.findByEmail(email)
-                .map(user -> User.builder()
-                        .username(user.getEmail())
-                        .password(user.getPasswordHash())
-                        .roles(user.getRole().name())
-                        .accountLocked(!user.getIsActive())
-                        .build())
+                .map(AuthenticatedUserPrincipal::from)
                 .orElseThrow(
                         () -> new UsernameNotFoundException("User not found with email: " + email)
                 );

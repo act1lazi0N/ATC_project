@@ -1,18 +1,19 @@
 package com.actilazion.aries_transaction.config;
 
+import com.actilazion.aries_transaction.identity.application.AuthenticatedUserPrincipal;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
 import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.function.Function;
+import java.util.UUID;
 import javax.crypto.SecretKey;
 
 import static io.jsonwebtoken.Jwts.builder;
@@ -33,42 +34,47 @@ public class JwtService {
         requireText(jwtConfig.getTokenType(), "jwt.token-type");
     }
 
-    public String generateToken(UserDetails userDetails) {
-        return generateToken(new HashMap<>(), userDetails);
+    public String generateToken(AuthenticatedUserPrincipal principal) {
+        return generateToken(new HashMap<>(), principal.getUserId().toString());
     }
 
     public String extractUsername(String token) {
         return extractClaim(token, Claims::getSubject);
     }
 
-    public boolean isTokenValid(String token, UserDetails userDetails) {
-        final String username = extractUsername(token);
-        return username != null && !username.isBlank() && username.equals(userDetails.getUsername());
+    public UUID extractUserId(String token) {
+        try {
+            return UUID.fromString(extractUsername(token));
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("JWT subject must be a user UUID", ex);
+        }
     }
 
-    public String generateToken(HashMap<String, Object> claims, UserDetails userDetails) {
+    public boolean isTokenValid(String token, AuthenticatedUserPrincipal principal) {
+        return principal.getUserId().equals(extractUserId(token));
+    }
+
+    private String generateToken(HashMap<String, Object> claims, String subject) {
         long nowMs = System.currentTimeMillis();
         return builder()
                 .claims(claims)
-                .subject(userDetails.getUsername())
+                .subject(subject)
                 .issuer(jwtConfig.getIssuer())
                 .audience()
                 .add(jwtConfig.getAudience())
                 .and()
                 .claim(TOKEN_TYPE_CLAIM, jwtConfig.getTokenType())
+                .id(UUID.randomUUID().toString())
                 .issuedAt(new Date(nowMs))
                 .expiration(new Date(nowMs + jwtConfig.getExpiration() * 1000))
                 .signWith(getSigningKey(), Jwts.SIG.HS256)
                 .compact();
     }
 
-    private boolean isTokenExpired(String token) {
-        return extractClaim(token, Claims::getExpiration).before(new Date());
-    }
-
     private <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
         final Claims claims = parser()
                 .verifyWith(getSigningKey())
+                .clockSkewSeconds(30)
                 .build()
                 .parseSignedClaims(token)
                 .getPayload();
@@ -96,6 +102,10 @@ public class JwtService {
         }
         if (!jwtConfig.getTokenType().equals(claims.get(TOKEN_TYPE_CLAIM, String.class))) {
             throw new IllegalArgumentException("JWT token type is invalid");
+        }
+        if (claims.getIssuedAt() == null || claims.getExpiration() == null
+                || claims.getId() == null || claims.getId().isBlank()) {
+            throw new IllegalArgumentException("JWT temporal claims are required");
         }
         String subject = claims.getSubject();
         if (subject == null || subject.isBlank()) {

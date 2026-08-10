@@ -6,11 +6,13 @@ import com.actilazion.aries_transaction.reconciliation.domain.exception.Reportin
 import com.actilazion.aries_transaction.reconciliation.dto.ReportingTransactionSnapshot;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.time.OffsetDateTime;
+import java.net.http.HttpClient;
 import java.util.List;
 
 @Component
@@ -27,7 +29,13 @@ public class HttpReportingTransactionSnapshotClient implements ReportingTransact
             RestClient.Builder restClientBuilder,
             ReportingClientProperties properties
     ) {
+        HttpClient httpClient = HttpClient.newBuilder()
+                .connectTimeout(properties.getConnectTimeout())
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(properties.getReadTimeout());
         this.restClient = restClientBuilder
+                .requestFactory(requestFactory)
                 .baseUrl(properties.getBaseUrl())
                 .build();
         this.properties = properties;

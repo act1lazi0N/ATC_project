@@ -41,7 +41,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
-@Testcontainers(disabledWithoutDocker = true)
+@Testcontainers
 @Import(ReconciliationServicePostgresIntegrationTest.FakeReportingConfig.class)
 class ReconciliationServicePostgresIntegrationTest {
     @Container

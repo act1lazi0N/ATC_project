@@ -15,13 +15,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.UUID;
 
 @Slf4j
@@ -29,20 +27,21 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AccountServiceImpl implements AccountService {
     private static final int ACCOUNT_NUMBER_MAX_ATTEMPTS = 5;
-    private static final long ACCOUNT_NUMBER_BOUND = 1_000_000_000_000L;
 
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
-    private final PlatformTransactionManager transactionManager;
+    private final AccountCreationAttemptService accountCreationAttemptService;
 
     @Override
     public AccountResponse create(CreateAccountRequest request, String ownerEmail) {
         validatePublicAccountType(request.accountType());
-        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
         for (int attempt = 1; attempt <= ACCOUNT_NUMBER_MAX_ATTEMPTS; attempt++) {
             try {
-                return transactionTemplate.execute(status -> createOnce(request, ownerEmail));
+                return accountCreationAttemptService.create(request, ownerEmail);
             } catch (DataIntegrityViolationException ex) {
+                if (!isAccountNumberCollision(ex)) {
+                    throw ex;
+                }
                 if (attempt == ACCOUNT_NUMBER_MAX_ATTEMPTS) {
                     throw new AccountNumberGenerationException(ACCOUNT_NUMBER_MAX_ATTEMPTS, ex);
                 }
@@ -52,21 +51,16 @@ public class AccountServiceImpl implements AccountService {
         throw new AccountNumberGenerationException(ACCOUNT_NUMBER_MAX_ATTEMPTS, null);
     }
 
-    private AccountResponse createOnce(CreateAccountRequest request, String ownerEmail) {
-        User owner = userRepository.findByEmail(ownerEmail)
-                .orElseThrow(() -> new ResourceNotFoundException("User", ownerEmail));
-        Account account = Account.builder()
-                .user(owner)
-                .accountNumber(generateAccountNumber())
-                .accountType(request.accountType())
-                .balance(BigDecimal.ZERO)
-                .currency(request.currency())
-                .status(AccountStatus.ACTIVE)
-                .build();
-
-        Account saved = accountRepository.saveAndFlush(account);
-        log.info("[ACCOUNT] Created accountId={} owner={}", saved.getId(), ownerEmail);
-        return AccountResponse.from(saved);
+    private boolean isAccountNumberCollision(DataIntegrityViolationException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation) {
+                return "uk_accounts_number".equals(violation.getConstraintName());
+            }
+            if (cause.getMessage() != null && cause.getMessage().contains("uk_accounts_number")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void validatePublicAccountType(AccountType accountType) {
@@ -105,11 +99,4 @@ public class AccountServiceImpl implements AccountService {
         return AccountResponse.from(accountRepository.save(account));
     }
 
-    private String generateAccountNumber() {
-        String number;
-        do {
-            number = String.format("%012d", ThreadLocalRandom.current().nextLong(ACCOUNT_NUMBER_BOUND));
-        } while (accountRepository.existsByAccountNumber(number));
-        return number;
-    }
 }

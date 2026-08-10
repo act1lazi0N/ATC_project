@@ -18,7 +18,6 @@ import com.actilazion.aries_transaction.settlement.domain.exception.SettlementId
 import com.actilazion.aries_transaction.settlement.infrastructure.SettlementBatchRepository;
 import com.actilazion.aries_transaction.settlement.infrastructure.SettlementItemRepository;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
-import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -87,7 +86,17 @@ public class SettlementServiceImpl implements SettlementService {
         Map<UUID, OriginalSettlementContext> adjustmentContexts = new HashMap<>();
 
         for (Transaction transaction : candidates) {
-            SettlementItemPlan itemPlan = itemPlanFor(transaction, feeRateBps, adjustmentContexts);
+            BigDecimal grossAmount = settlementGrossAmount(transaction, cutoffCompletedAt);
+            if (itemTypeFor(transaction) == SettlementItemType.NORMAL && grossAmount.signum() <= 0) {
+                continue;
+            }
+
+            SettlementItemPlan itemPlan = itemPlanFor(
+                    transaction,
+                    grossAmount,
+                    feeRateBps,
+                    adjustmentContexts
+            );
             SettlementAmounts amounts = itemPlan.amounts();
 
             SettlementItem item = SettlementItem.builder()
@@ -107,6 +116,10 @@ public class SettlementServiceImpl implements SettlementService {
             grossTotal = grossTotal.add(amounts.grossAmount());
             feeTotal = feeTotal.add(amounts.feeAmount());
             netTotal = netTotal.add(amounts.netAmount());
+        }
+
+        if (batch.getItems().isEmpty()) {
+            throw new NoSettlementCandidateException(normalizedCurrency);
         }
 
         batch.setGrossAmount(grossTotal);
@@ -140,11 +153,11 @@ public class SettlementServiceImpl implements SettlementService {
 
     private SettlementItemPlan itemPlanFor(
             Transaction transaction,
+            BigDecimal grossAmount,
             int feeRateBps,
             Map<UUID, OriginalSettlementContext> adjustmentContexts
     ) {
         SettlementItemType itemType = itemTypeFor(transaction);
-        BigDecimal grossAmount = settlementGrossAmount(transaction);
         if (itemType == SettlementItemType.NORMAL) {
             BigDecimal feeAmount = calculateFee(grossAmount, feeRateBps);
             SettlementAmounts amounts = new SettlementAmounts(grossAmount, feeAmount, grossAmount.subtract(feeAmount));
@@ -161,12 +174,12 @@ public class SettlementServiceImpl implements SettlementService {
         return new SettlementItemPlan(context.originalItem().getReceiverAccount(), itemType, amounts);
     }
 
-    private BigDecimal settlementGrossAmount(Transaction transaction) {
-        if (transaction.getOriginalTransaction() == null
-                && transaction.getStatus() == TransactionStatus.PARTIALLY_REFUNDED) {
-            BigDecimal refundedAmount = transaction.getRefundedAmount() != null
-                    ? transaction.getRefundedAmount()
-                    : BigDecimal.ZERO;
+    private BigDecimal settlementGrossAmount(Transaction transaction, OffsetDateTime cutoffCompletedAt) {
+        if (transaction.getOriginalTransaction() == null) {
+            BigDecimal refundedAmount = transactionRepository.sumCompletedRefundAmount(
+                    transaction.getId(),
+                    cutoffCompletedAt
+            );
             return transaction.getAmount().subtract(refundedAmount);
         }
         return transaction.getAmount();

@@ -32,12 +32,12 @@ import java.util.stream.Collectors;
 public class ReconciliationServiceImpl implements ReconciliationService {
     private final TransactionRepository transactionRepository;
     private final ReconciliationRunRepository reconciliationRunRepository;
+    private final ReconciliationRunPersistenceService runPersistenceService;
     private final ReportingTransactionSnapshotClient reportingSnapshotClient;
     private final UserRepository userRepository;
     private final ReconciliationPolicyProperties policyProperties;
 
     @Override
-    @Transactional
     public ReconciliationRunResponse reconcile(
             String currency,
             OffsetDateTime windowStart,
@@ -66,9 +66,11 @@ public class ReconciliationServiceImpl implements ReconciliationService {
                 .build();
 
         compareSourceAndReporting(run, sourceTransactions, reportingSnapshots);
-        run.complete(sourceTransactions.size(), reportingSnapshots.size(), OffsetDateTime.now());
-
-        return ReconciliationRunResponse.from(reconciliationRunRepository.save(run));
+        return runPersistenceService.saveCompleted(
+                run,
+                sourceTransactions.size(),
+                reportingSnapshots.size()
+        );
     }
 
     private void validateWindow(OffsetDateTime windowStart, OffsetDateTime windowEnd) {

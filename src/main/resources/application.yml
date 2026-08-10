@@ -57,6 +57,8 @@ app:
       mode: ${RECONCILIATION_REPORTING_MODE:disabled}
       base-url: ${RECONCILIATION_REPORTING_BASE_URL:}
       snapshots-path: ${RECONCILIATION_REPORTING_SNAPSHOTS_PATH:/api/v1/reporting/transactions/snapshots}
+      connect-timeout: ${RECONCILIATION_REPORTING_CONNECT_TIMEOUT:2s}
+      read-timeout: ${RECONCILIATION_REPORTING_READ_TIMEOUT:5s}
 
 logging:
   level:

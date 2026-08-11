@@ -2,6 +2,7 @@ package com.actilazion.aries_transaction.settlement.dto;
 
 import com.actilazion.aries_transaction.settlement.domain.PayoutStatus;
 import com.actilazion.aries_transaction.settlement.domain.SettlementItem;
+import com.actilazion.aries_transaction.settlement.domain.SettlementItemType;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -15,6 +16,7 @@ public record SettlementItemResponse(
         BigDecimal netAmount,
         BigDecimal platformRevenue,
         BigDecimal receiverPayable,
+        SettlementItemType itemType,
         String currency,
         PayoutStatus payoutStatus
 ) {
@@ -28,6 +30,7 @@ public record SettlementItemResponse(
                 item.getNetAmount(),
                 item.getPlatformRevenue(),
                 item.getReceiverPayable(),
+                item.getItemType(),
                 item.getCurrency(),
                 item.getPayoutStatus()
         );

@@ -7,9 +7,11 @@ import com.actilazion.aries_transaction.outbox.domain.OutboxEventStatus;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEventType;
 import com.actilazion.aries_transaction.outbox.infrastructure.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,6 +21,10 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class OutboxEventService {
+    private static final int MAX_ERROR_LENGTH = 500;
+    private static final Duration MAX_RETRY_DELAY = Duration.ofMinutes(5);
+    private static final Duration PROCESSING_LEASE_DURATION = Duration.ofMinutes(5);
+
     private final OutboxEventRepository outboxEventRepository;
 
     @Transactional
@@ -67,20 +73,59 @@ public class OutboxEventService {
     }
 
     @Transactional
+    public List<OutboxEvent> claimPublishableEvents(int limit) {
+        OffsetDateTime now = OffsetDateTime.now();
+        List<OutboxEvent> events = outboxEventRepository.findPublishableEventsWithLock(
+                List.of(OutboxEventStatus.PENDING, OutboxEventStatus.FAILED, OutboxEventStatus.PROCESSING),
+                now,
+                PageRequest.of(0, limit)
+        );
+        events.forEach(event -> {
+            event.setStatus(OutboxEventStatus.PROCESSING);
+            event.setLastError(null);
+            event.setNextAttemptAt(now.plus(PROCESSING_LEASE_DURATION));
+        });
+        return outboxEventRepository.saveAllAndFlush(events);
+    }
+
+    @Transactional
     public void markPublished(UUID eventId) {
         OutboxEvent event = outboxEventRepository.findById(eventId)
                 .orElseThrow(() -> new IllegalArgumentException("Outbox event not found: " + eventId));
         event.setStatus(OutboxEventStatus.PUBLISHED);
         event.setPublishedAt(OffsetDateTime.now());
+        event.setLastError(null);
+        event.setNextAttemptAt(null);
         outboxEventRepository.save(event);
     }
 
     @Transactional
     public void markFailed(UUID eventId) {
+        markFailed(eventId, "Publisher did not confirm delivery");
+    }
+
+    @Transactional
+    public void markFailed(UUID eventId, String errorMessage) {
         OutboxEvent event = outboxEventRepository.findById(eventId)
                 .orElseThrow(() -> new IllegalArgumentException("Outbox event not found: " + eventId));
+        int nextAttempt = event.getAttemptCount() + 1;
+        event.setAttemptCount(nextAttempt);
         event.setStatus(OutboxEventStatus.FAILED);
+        event.setLastError(truncate(errorMessage));
+        event.setNextAttemptAt(OffsetDateTime.now().plus(backoffFor(nextAttempt)));
         outboxEventRepository.save(event);
+    }
+
+    private Duration backoffFor(int attemptCount) {
+        long seconds = Math.min(MAX_RETRY_DELAY.toSeconds(), 1L << Math.min(attemptCount, 8));
+        return Duration.ofSeconds(seconds);
+    }
+
+    private String truncate(String value) {
+        if (value == null || value.length() <= MAX_ERROR_LENGTH) {
+            return value;
+        }
+        return value.substring(0, MAX_ERROR_LENGTH);
     }
 
     private Map<String, Object> toPayload(Transaction tx) {

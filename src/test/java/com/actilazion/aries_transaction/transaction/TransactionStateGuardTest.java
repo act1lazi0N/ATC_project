@@ -20,6 +20,10 @@ class TransactionStateGuardTest {
         assertThat(TransactionStateGuard.canTransition(TransactionStatus.COMPLETED, TransactionStatus.REVERSED)).isTrue();
         assertThat(TransactionStateGuard.canTransition(TransactionStatus.COMPLETED, TransactionStatus.REFUNDED)).isTrue();
         assertThat(TransactionStateGuard.canTransition(TransactionStatus.COMPLETED, TransactionStatus.PARTIALLY_REFUNDED)).isTrue();
+        assertThat(TransactionStateGuard.canTransition(
+                TransactionStatus.PARTIALLY_REFUNDED,
+                TransactionStatus.PARTIALLY_REFUNDED
+        )).isTrue();
         assertThat(TransactionStateGuard.canTransition(TransactionStatus.PARTIALLY_REFUNDED, TransactionStatus.REFUNDED)).isTrue();
     }
 

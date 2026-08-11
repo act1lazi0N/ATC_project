@@ -3,6 +3,7 @@ package com.actilazion.aries_transaction.transaction.application;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecord;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecordStatus;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
+import com.actilazion.aries_transaction.transaction.domain.TransactionOperation;
 import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
 import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
@@ -25,16 +26,11 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class IdempotencyService {
 
-    //TODO: Group status become Enums
-    private static final String TRANSFER_OPERATION = "TRANSFER";
-    private static final String REVERSAL_OPERATION = "REVERSAL";
-    private static final String REFUND_OPERATION = "REFUND";
+    private static final String TRANSFER_OPERATION = TransactionOperation.TRANSFER.name();
+    private static final String REVERSAL_OPERATION = TransactionOperation.REVERSAL.name();
+    private static final String REFUND_OPERATION = TransactionOperation.REFUND.name();
 
     private final IdempotencyRecordRepository idempotencyRecordRepository;
-
-    public Optional<IdempotencyRecord> findByKey(String idempotencyKey) {
-        return idempotencyRecordRepository.findByIdempotencyKey(idempotencyKey);
-    }
 
     public Optional<IdempotencyRecord> findTransferRecord(TransferRequest request, String initiatorEmail) {
         return findByScope(request.idempotencyKey(), TRANSFER_OPERATION, initiatorEmail);

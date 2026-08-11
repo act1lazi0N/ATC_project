@@ -17,7 +17,8 @@ public final class TransactionStateGuard {
             case COMPLETED -> target == TransactionStatus.REVERSED
                     || target == TransactionStatus.REFUNDED
                     || target == TransactionStatus.PARTIALLY_REFUNDED;
-            case PARTIALLY_REFUNDED -> target == TransactionStatus.REFUNDED;
+            case PARTIALLY_REFUNDED -> target == TransactionStatus.PARTIALLY_REFUNDED
+                    || target == TransactionStatus.REFUNDED;
             case FAILED, REVERSED, REFUNDED -> false;
         };
     }

@@ -71,6 +71,11 @@ public class SettlementItem {
     @Column(name = "receiver_payable", nullable = false, precision = 18, scale = 2)
     private BigDecimal receiverPayable;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "settlement_item_type", nullable = false, length = 20)
+    @Builder.Default
+    private SettlementItemType itemType = SettlementItemType.NORMAL;
+
     @Column(nullable = false, length = 3)
     private String currency;
 

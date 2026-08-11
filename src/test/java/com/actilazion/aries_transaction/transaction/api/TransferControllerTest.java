@@ -94,6 +94,28 @@ class TransferControllerTest {
     }
 
     @Test
+    void refund_positiveAmountBelowTransferMinimum_hasNoAmountViolation() {
+        RefundRequest request = new RefundRequest(new BigDecimal("500"), "refund-key-00001", "Remaining refund");
+
+        var violations = validator.validate(request);
+
+        assertThat(violations)
+                .extracting(violation -> violation.getPropertyPath().toString())
+                .doesNotContain("amount");
+    }
+
+    @Test
+    void refund_zeroAmount_hasValidationViolation() {
+        RefundRequest request = new RefundRequest(BigDecimal.ZERO, "refund-key-00001", "Zero refund");
+
+        var violations = validator.validate(request);
+
+        assertThat(violations)
+                .extracting(violation -> violation.getPropertyPath().toString())
+                .contains("amount");
+    }
+
+    @Test
     void reverse_validRequest_returnsResponseAndPrincipal() {
         UUID originalTransactionId = UUID.randomUUID();
         UUID reversalTransactionId = UUID.randomUUID();

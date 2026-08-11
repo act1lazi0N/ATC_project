@@ -101,7 +101,7 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Lombok — giảm boilerplate -->
+        <!-- Lombok - reduces boilerplate -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

@@ -14,6 +14,7 @@ import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecord;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecordStatus;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
+import com.actilazion.aries_transaction.transaction.domain.TransactionOperation;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStateGuard;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.domain.exception.AccountNotActiveException;
@@ -56,13 +57,14 @@ public class TransferServiceImpl implements TransferService {
     @Override
     @Transactional
     public TransactionResponse transfer(TransferRequest request, String initiatorEmail) {
+        User initiator = lockInitiator(initiatorEmail);
         var existing = idempotencyService.findTransferRecord(request, initiatorEmail);
         if (existing.isPresent()) {
             return responseForIdempotentRetry(existing.get(), request);
         }
 
         IdempotencyRecord record = idempotencyService.createProcessingRecord(request, initiatorEmail);
-        TransactionResponse response = doTransfer(request, initiatorEmail);
+        TransactionResponse response = doTransfer(request, initiator);
         completeIdempotencyRecord(record, response);
         return response;
     }
@@ -70,8 +72,8 @@ public class TransferServiceImpl implements TransferService {
     @Override
     @Transactional
     public TransactionResponse reverse(UUID originalTransactionId, ReversalRequest request, String initiatorEmail) {
+        User initiator = lockInitiator(initiatorEmail);
         Transaction original = lockTransaction(originalTransactionId);
-        User initiator = loadInitiator(initiatorEmail);
         assertCanReverse(initiator);
         var existing = idempotencyService.findReversalRecord(request, initiatorEmail);
         if (existing.isPresent()) {
@@ -87,8 +89,8 @@ public class TransferServiceImpl implements TransferService {
     @Override
     @Transactional
     public TransactionResponse refund(UUID originalTransactionId, RefundRequest request, String initiatorEmail) {
+        User initiator = lockInitiator(initiatorEmail);
         Transaction original = lockTransaction(originalTransactionId);
-        User initiator = loadInitiator(initiatorEmail);
         assertCanRefund(original, initiator);
         var existing = idempotencyService.findRefundRecord(request, initiatorEmail);
         if (existing.isPresent()) {
@@ -142,7 +144,7 @@ public class TransferServiceImpl implements TransferService {
         idempotencyService.markCompleted(record, tx, response);
     }
 
-    private TransactionResponse doTransfer(TransferRequest request, String initiatorEmail) {
+    private TransactionResponse doTransfer(TransferRequest request, User initiator) {
         UUID fromId = UUID.fromString(request.fromAccountId());
         UUID toId = UUID.fromString(request.toAccountId());
 
@@ -154,7 +156,6 @@ public class TransferServiceImpl implements TransferService {
         Account fromAccount = accounts.fromAccount();
         Account toAccount = accounts.toAccount();
 
-        User initiator = loadInitiator(initiatorEmail);
         assertOwnsAccount(fromAccount, initiator);
         validateAccountActive(fromAccount);
         validateAccountActive(toAccount);
@@ -167,12 +168,13 @@ public class TransferServiceImpl implements TransferService {
                 .initiatedBy(initiator)
                 .amount(request.amount())
                 .currency(request.currency() != null ? request.currency() : fromAccount.getCurrency())
+                .operation(TransactionOperation.TRANSFER)
                 .idempotencyKey(request.idempotencyKey())
                 .description(request.description())
                 .status(TransactionStatus.PENDING)
                 .build();
         transactionRepository.save(tx);
-        auditLogService.log(tx, AuditEventType.TRANSFER_INITIATED, initiatorEmail);
+        auditLogService.log(tx, AuditEventType.TRANSFER_INITIATED, initiator.getEmail());
 
         fromAccount.setBalance(fromAccount.getBalance().subtract(request.amount()));
         toAccount.setBalance(toAccount.getBalance().add(request.amount()));
@@ -187,7 +189,7 @@ public class TransferServiceImpl implements TransferService {
         ledgerService.recordTransfer(tx);
         outboxEventService.recordTransferCompleted(tx);
 
-        auditLogService.log(tx, AuditEventType.TRANSFER_COMPLETED, initiatorEmail);
+        auditLogService.log(tx, AuditEventType.TRANSFER_COMPLETED, initiator.getEmail());
         log.info("[TRANSFER] COMPLETED txId={} from={} to={} amount={}", tx.getId(), fromId, toId, request.amount());
 
         return TransactionResponse.from(tx);
@@ -208,6 +210,7 @@ public class TransferServiceImpl implements TransferService {
                 lockedFromAccount,
                 lockedToAccount,
                 original.getAmount(),
+                TransactionOperation.REVERSAL,
                 request.idempotencyKey(),
                 request.description(),
                 initiator
@@ -251,6 +254,7 @@ public class TransferServiceImpl implements TransferService {
                 lockedFromAccount,
                 lockedToAccount,
                 request.amount(),
+                TransactionOperation.REFUND,
                 request.idempotencyKey(),
                 request.description(),
                 initiator
@@ -282,6 +286,7 @@ public class TransferServiceImpl implements TransferService {
             Account fromAccount,
             Account toAccount,
             BigDecimal amount,
+            TransactionOperation operation,
             String idempotencyKey,
             String description,
             User initiator
@@ -296,6 +301,7 @@ public class TransferServiceImpl implements TransferService {
                 .initiatedBy(initiator)
                 .amount(amount)
                 .currency(original.getCurrency())
+                .operation(operation)
                 .idempotencyKey(idempotencyKey)
                 .description(description)
                 .originalTransaction(original)
@@ -303,8 +309,8 @@ public class TransferServiceImpl implements TransferService {
                 .build();
     }
 
-    private User loadInitiator(String initiatorEmail) {
-        return userRepository.findByEmail(initiatorEmail)
+    private User lockInitiator(String initiatorEmail) {
+        return userRepository.findByEmailWithLock(initiatorEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User", initiatorEmail));
     }
 
@@ -329,31 +335,6 @@ public class TransferServiceImpl implements TransferService {
             return;
         }
         throw new AccessDeniedException("Caller is not authorized to refund transactions");
-    }
-
-    private void assertCanViewTransaction(Transaction transaction, User viewer) {
-        if (isPrivileged(viewer)) {
-            return;
-        }
-        if (isAccountOwner(transaction.getFromAccount(), viewer) || isAccountOwner(transaction.getToAccount(), viewer)) {
-            return;
-        }
-        throw new AccessDeniedException("Caller is not authorized to view this transaction");
-    }
-
-    private void assertCanViewAccount(Account account, User viewer) {
-        if (isPrivileged(viewer)) {
-            return;
-        }
-        assertOwnsAccount(account, viewer);
-    }
-
-    private boolean isPrivileged(User user) {
-        return user.getRole() == Role.ADMIN || user.getRole() == Role.OPERATOR;
-    }
-
-    private boolean isAccountOwner(Account account, User user) {
-        return account.getUser().getId().equals(user.getId());
     }
 
     private void moveBalance(Account fromAccount, Account toAccount, BigDecimal amount) {

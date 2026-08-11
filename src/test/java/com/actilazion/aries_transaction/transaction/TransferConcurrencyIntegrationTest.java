@@ -131,6 +131,35 @@ class TransferConcurrencyIntegrationTest {
     }
 
     @Test
+    @DisplayName("Concurrent same idempotency key returns one financial effect")
+    void concurrentSameIdempotencyKeySameRequest_returnsOriginalResponse() throws Exception {
+        TransferRequest request = transferRequest(senderAccount, receiverAccount, new BigDecimal("100"));
+
+        List<Object> results = runConcurrently(
+                () -> transferService.transfer(request, sender.getEmail()),
+                () -> transferService.transfer(request, sender.getEmail())
+        );
+
+        List<TransactionResponse> responses = results.stream()
+                .filter(TransactionResponse.class::isInstance)
+                .map(TransactionResponse.class::cast)
+                .toList();
+
+        assertThat(responses).hasSize(2);
+        assertThat(responses)
+                .extracting(TransactionResponse::id)
+                .containsOnly(responses.getFirst().id());
+        assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("900");
+        assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
+                .isEqualByComparingTo("1100");
+        assertThat(transactionRepository.count()).isEqualTo(1);
+        assertThat(ledgerEntryRepository.count()).isEqualTo(2);
+        assertThat(outboxEventRepository.count()).isEqualTo(1);
+        assertThat(idempotencyRecordRepository.count()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("Stress: many concurrent debits from same account preserve money invariants")
     void stressConcurrentDebitsFromSameAccount_preservesMoneyInvariants() throws Exception {
         senderAccount.setBalance(new BigDecimal("1000"));

@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 
 public record RefundRequest(
         @NotNull(message = "amount is required")
-        @DecimalMin(value = "1000", message = "Minimum refund amount is 1000")
+        @DecimalMin(value = "0.01", message = "amount must be greater than 0")
         @Digits(integer = 16, fraction = 2, message = "Invalid amount format")
         BigDecimal amount,
 

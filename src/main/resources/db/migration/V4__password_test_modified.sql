@@ -1,4 +1,4 @@
--- Generate hash đúng bằng BCrypt cost 12 cho "password123"
+-- Generate a BCrypt cost 12 hash for "password123"
 UPDATE users SET password_hash = '$2a$12$mLw64s78D1wld3jjsmwgI.HbKUyE.WevvQS8dZ8eLrb5tguiDFV3a'
 WHERE email IN (
                 'admin@transfer.local',

@@ -1,6 +1,7 @@
 package com.actilazion.aries_transaction.transaction.api;
 
 import com.actilazion.aries_transaction.transaction.application.TransferService;
+import com.actilazion.aries_transaction.common.redis.DuplicateSuppressionService;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
 import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
@@ -24,10 +25,12 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -39,12 +42,21 @@ class TransferControllerTest {
     @Mock
     TransferService transferService;
 
+    @Mock
+    DuplicateSuppressionService duplicateSuppression;
+
     @InjectMocks
     TransferController transferController;
 
     @BeforeAll
     static void setUpValidator() {
         validator = Validation.buildDefaultValidatorFactory().getValidator();
+    }
+
+    @org.junit.jupiter.api.BeforeEach
+    void bypassDuplicateSuppressionInUnitTest() {
+        lenient().when(duplicateSuppression.execute(any(), any(), any(), any(), any()))
+                .thenAnswer(invocation -> ((Supplier<?>) invocation.getArgument(4)).get());
     }
 
     @Test

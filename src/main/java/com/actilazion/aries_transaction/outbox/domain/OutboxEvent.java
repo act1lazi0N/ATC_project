@@ -77,4 +77,7 @@ public class OutboxEvent {
 
     @Column(name = "last_error", length = 500)
     private String lastError;
+
+    @Column(name = "claim_token")
+    private UUID claimToken;
 }

@@ -28,10 +28,27 @@ logging:
 
 jwt:
   secret: dGhpcyBpcyBhIHZlcnkgbG9uZyBzZWNyZXQga2V5IGZvciB0ZXN0cw==
-  expiration: 86400
+  expiration: 900
+  refresh-expiration: 2592000
+  refresh-cookie-secure: false
+  refresh-cookie-same-site: Strict
   issuer: aries-transaction
   audience: aries-transaction-api
   token-type: access
+
+security:
+  ephemeral:
+    enabled: false
+    key-prefix: aries:transaction:test:v1
+    key-hash-secret: test-ephemeral-key-hash-secret
+    command-timeout-ms: 250
+  auth-rate-limit:
+    window-seconds: 60
+    ip-requests: 60
+    identity-requests: 10
+    trusted-proxies: []
+  refresh-cookie:
+    allowed-origins: http://localhost:3000
 
 app:
   outbox:
@@ -42,3 +59,8 @@ app:
   reconciliation:
     expected-lag: PT0S
     max-window: P31D
+
+identity:
+  login:
+    max-failed-attempts: 3
+    lock-duration-seconds: 900

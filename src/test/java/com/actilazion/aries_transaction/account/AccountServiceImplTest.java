@@ -1,6 +1,7 @@
 package com.actilazion.aries_transaction.account;
 
 import com.actilazion.aries_transaction.account.application.AccountServiceImpl;
+import com.actilazion.aries_transaction.account.application.AccountCreationAttemptService;
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.account.domain.AccountType;
 import com.actilazion.aries_transaction.account.domain.exception.AccountNumberGenerationException;
@@ -11,9 +12,8 @@ import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.support.AbstractPlatformTransactionManager;
-import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -35,7 +35,7 @@ class AccountServiceImplTest {
     private final AccountServiceImpl accountService = new AccountServiceImpl(
             accountRepository,
             userRepository,
-            new PassthroughTransactionManager()
+            new AccountCreationAttemptService(accountRepository, userRepository)
     );
 
     @Test
@@ -43,7 +43,7 @@ class AccountServiceImplTest {
         when(userRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(owner()));
         when(accountRepository.existsByAccountNumber(anyString())).thenReturn(false);
         when(accountRepository.saveAndFlush(any(Account.class)))
-                .thenThrow(new DataIntegrityViolationException("duplicate account number"))
+                .thenThrow(new DataIntegrityViolationException("duplicate key uk_accounts_number"))
                 .thenAnswer(invocation -> persist(invocation.getArgument(0)));
 
         var response = accountService.create(new CreateAccountRequest(AccountType.PERSONAL, "VND", null), OWNER_EMAIL);
@@ -58,7 +58,7 @@ class AccountServiceImplTest {
         when(userRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(owner()));
         when(accountRepository.existsByAccountNumber(anyString())).thenReturn(false);
         when(accountRepository.saveAndFlush(any(Account.class)))
-                .thenThrow(new DataIntegrityViolationException("duplicate account number"));
+                .thenThrow(new DataIntegrityViolationException("duplicate key uk_accounts_number"));
 
         assertThatThrownBy(() -> accountService.create(
                 new CreateAccountRequest(AccountType.PERSONAL, "VND", null),
@@ -66,6 +66,30 @@ class AccountServiceImplTest {
         )).isInstanceOf(AccountNumberGenerationException.class);
 
         verify(accountRepository, times(5)).saveAndFlush(any(Account.class));
+    }
+
+    @Test
+    void create_propagatesIntegrityViolationForOtherConstraint() {
+        when(userRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(owner()));
+        when(accountRepository.existsByAccountNumber(anyString())).thenReturn(false);
+        DataIntegrityViolationException violation = new DataIntegrityViolationException("uk_accounts_owner");
+        when(accountRepository.saveAndFlush(any(Account.class))).thenThrow(violation);
+
+        assertThatThrownBy(() -> accountService.create(
+                new CreateAccountRequest(AccountType.PERSONAL, "VND", null),
+                OWNER_EMAIL
+        )).isSameAs(violation);
+
+        verify(accountRepository, times(1)).saveAndFlush(any(Account.class));
+    }
+
+    @Test
+    void accountCreationAttempt_usesRequiresNewTransaction() throws NoSuchMethodException {
+        Transactional transactional = AccountCreationAttemptService.class
+                .getMethod("create", CreateAccountRequest.class, String.class)
+                .getAnnotation(Transactional.class);
+
+        assertThat(transactional.propagation()).isEqualTo(Propagation.REQUIRES_NEW);
     }
 
     private User owner() {
@@ -83,22 +107,4 @@ class AccountServiceImplTest {
         return account;
     }
 
-    private static final class PassthroughTransactionManager extends AbstractPlatformTransactionManager {
-        @Override
-        protected Object doGetTransaction() {
-            return new Object();
-        }
-
-        @Override
-        protected void doBegin(Object transaction, TransactionDefinition definition) {
-        }
-
-        @Override
-        protected void doCommit(DefaultTransactionStatus status) {
-        }
-
-        @Override
-        protected void doRollback(DefaultTransactionStatus status) {
-        }
-    }
 }

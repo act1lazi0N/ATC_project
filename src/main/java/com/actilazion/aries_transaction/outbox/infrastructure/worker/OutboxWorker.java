@@ -39,15 +39,19 @@ public class OutboxWorker {
         try {
             boolean delivered = outboxEventPublisher.publish(event);
             if (delivered) {
-                outboxEventService.markPublished(event.getId());
+                outboxEventService.markPublished(event.getId(), event.getClaimToken());
                 return;
             }
 
             log.info("[OUTBOX] Event remains pending id={} publisher did not confirm delivery", event.getId());
-            outboxEventService.markFailed(event.getId(), "Publisher did not confirm delivery");
+            outboxEventService.markFailed(
+                    event.getId(),
+                    event.getClaimToken(),
+                    "Publisher did not confirm delivery"
+            );
         } catch (Exception ex) {
             log.error("[OUTBOX] Event delivery failed id={} error={}", event.getId(), ex.getMessage(), ex);
-            outboxEventService.markFailed(event.getId(), ex.getMessage());
+            outboxEventService.markFailed(event.getId(), event.getClaimToken(), ex.getMessage());
         }
     }
 }

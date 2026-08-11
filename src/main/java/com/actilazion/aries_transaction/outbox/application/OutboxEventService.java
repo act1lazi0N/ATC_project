@@ -84,36 +84,48 @@ public class OutboxEventService {
             event.setStatus(OutboxEventStatus.PROCESSING);
             event.setLastError(null);
             event.setNextAttemptAt(now.plus(PROCESSING_LEASE_DURATION));
+            event.setClaimToken(UUID.randomUUID());
         });
         return outboxEventRepository.saveAllAndFlush(events);
     }
 
     @Transactional
-    public void markPublished(UUID eventId) {
-        OutboxEvent event = outboxEventRepository.findById(eventId)
-                .orElseThrow(() -> new IllegalArgumentException("Outbox event not found: " + eventId));
-        event.setStatus(OutboxEventStatus.PUBLISHED);
-        event.setPublishedAt(OffsetDateTime.now());
-        event.setLastError(null);
-        event.setNextAttemptAt(null);
-        outboxEventRepository.save(event);
+    public void markPublished(UUID eventId, UUID claimToken) {
+        var event = outboxEventRepository.findByIdAndStatusAndClaimToken(
+                eventId,
+                OutboxEventStatus.PROCESSING,
+                claimToken
+        );
+        if (event.isEmpty()) {
+            return;
+        }
+        OutboxEvent claimedEvent = event.get();
+        claimedEvent.setStatus(OutboxEventStatus.PUBLISHED);
+        claimedEvent.setPublishedAt(OffsetDateTime.now());
+        claimedEvent.setLastError(null);
+        claimedEvent.setNextAttemptAt(null);
+        claimedEvent.setClaimToken(null);
+        outboxEventRepository.save(claimedEvent);
     }
 
     @Transactional
-    public void markFailed(UUID eventId) {
-        markFailed(eventId, "Publisher did not confirm delivery");
-    }
-
-    @Transactional
-    public void markFailed(UUID eventId, String errorMessage) {
-        OutboxEvent event = outboxEventRepository.findById(eventId)
-                .orElseThrow(() -> new IllegalArgumentException("Outbox event not found: " + eventId));
-        int nextAttempt = event.getAttemptCount() + 1;
-        event.setAttemptCount(nextAttempt);
-        event.setStatus(OutboxEventStatus.FAILED);
-        event.setLastError(truncate(errorMessage));
-        event.setNextAttemptAt(OffsetDateTime.now().plus(backoffFor(nextAttempt)));
-        outboxEventRepository.save(event);
+    public void markFailed(UUID eventId, UUID claimToken, String errorMessage) {
+        var event = outboxEventRepository.findByIdAndStatusAndClaimToken(
+                eventId,
+                OutboxEventStatus.PROCESSING,
+                claimToken
+        );
+        if (event.isEmpty()) {
+            return;
+        }
+        OutboxEvent claimedEvent = event.get();
+        int nextAttempt = claimedEvent.getAttemptCount() + 1;
+        claimedEvent.setAttemptCount(nextAttempt);
+        claimedEvent.setStatus(OutboxEventStatus.FAILED);
+        claimedEvent.setLastError(truncate(errorMessage));
+        claimedEvent.setNextAttemptAt(OffsetDateTime.now().plus(backoffFor(nextAttempt)));
+        claimedEvent.setClaimToken(null);
+        outboxEventRepository.save(claimedEvent);
     }
 
     private Duration backoffFor(int attemptCount) {

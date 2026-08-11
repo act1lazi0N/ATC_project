@@ -133,10 +133,7 @@ public class TransferServiceImpl implements TransferService {
     }
 
     private TransactionResponse responseForCompletedRetry(IdempotencyRecord record, String idempotencyKey) {
-        if (record.getStatus() == IdempotencyRecordStatus.COMPLETED && record.getTransaction() != null) {
-            return TransactionResponse.from(record.getTransaction());
-        }
-        throw new DuplicateTransferException(idempotencyKey);
+        return idempotencyService.responseFromPayload(record, idempotencyKey);
     }
 
     private void completeIdempotencyRecord(IdempotencyRecord record, TransactionResponse response) {

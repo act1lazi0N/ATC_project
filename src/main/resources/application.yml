@@ -29,14 +29,33 @@ spring:
     redis:
       host: localhost
       port: 6379
-      timeout: 2000ms
+      timeout: 250ms
 
 jwt:
   secret: ${JWT_SECRET}
-  expiration: 86400
+  expiration: ${JWT_ACCESS_TOKEN_EXPIRATION:900}
+  refresh-expiration: ${JWT_REFRESH_TOKEN_EXPIRATION:2592000}
+  refresh-cookie-secure: ${JWT_REFRESH_COOKIE_SECURE:true}
+  refresh-cookie-same-site: ${JWT_REFRESH_COOKIE_SAME_SITE:Strict}
   issuer: ${JWT_ISSUER:aries-transaction}
   audience: ${JWT_AUDIENCE:aries-transaction-api}
   token-type: access
+
+security:
+  ephemeral:
+    enabled: ${SECURITY_EPHEMERAL_ENABLED:true}
+    key-prefix: ${SECURITY_EPHEMERAL_KEY_PREFIX:aries:transaction:dev:v1}
+    key-hash-secret: ${SECURITY_EPHEMERAL_KEY_HASH_SECRET:${JWT_SECRET}}
+    command-timeout-ms: ${SECURITY_EPHEMERAL_COMMAND_TIMEOUT_MS:250}
+    duplicate-suppression-ttl-seconds: ${SECURITY_EPHEMERAL_DUPLICATE_TTL_SECONDS:30}
+    replay-cache-ttl-seconds: ${SECURITY_EPHEMERAL_REPLAY_TTL_SECONDS:300}
+  auth-rate-limit:
+    window-seconds: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:60}
+    ip-requests: ${AUTH_RATE_LIMIT_IP_REQUESTS:60}
+    identity-requests: ${AUTH_RATE_LIMIT_IDENTITY_REQUESTS:10}
+    trusted-proxies: ${AUTH_RATE_LIMIT_TRUSTED_PROXIES:}
+  refresh-cookie:
+    allowed-origins: ${AUTH_REFRESH_ALLOWED_ORIGINS:http://localhost:3000}
 
 springdoc:
   api-docs:
@@ -57,10 +76,31 @@ app:
       mode: ${RECONCILIATION_REPORTING_MODE:disabled}
       base-url: ${RECONCILIATION_REPORTING_BASE_URL:}
       snapshots-path: ${RECONCILIATION_REPORTING_SNAPSHOTS_PATH:/api/v1/reporting/transactions/snapshots}
+      connect-timeout: ${RECONCILIATION_REPORTING_CONNECT_TIMEOUT:2s}
+      read-timeout: ${RECONCILIATION_REPORTING_READ_TIMEOUT:5s}
+
+identity:
+  login:
+    max-failed-attempts: ${IDENTITY_LOGIN_MAX_FAILED_ATTEMPTS:5}
+    lock-duration-seconds: ${IDENTITY_LOGIN_LOCK_DURATION_SECONDS:900}
 
 logging:
   level:
     com.actilazion.aries_transaction: INFO
     org.springframework.security: INFO
     org.hibernate.SQL: WARN
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  health:
+    redis:
+      enabled: ${SECURITY_EPHEMERAL_ENABLED:true}
 

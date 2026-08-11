@@ -26,7 +26,7 @@ import com.actilazion.aries_transaction.transaction.domain.exception.RefundAmoun
 import com.actilazion.aries_transaction.transaction.domain.exception.SelfTransferException;
 import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
 import com.actilazion.aries_transaction.audit.application.AuditLogService;
-import com.actilazion.aries_transaction.ledger.application.LedgerService;
+import com.actilazion.aries_transaction.ledger.application.LedgerServiceImpl;
 import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
 import com.actilazion.aries_transaction.transaction.application.IdempotencyService;
 import com.actilazion.aries_transaction.transaction.application.TransferService;
@@ -58,7 +58,7 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 
 @DataJpaTest(showSql = false)
 @ActiveProfiles("test")
-@Import({TransferServiceImpl.class, AuditLogService.class, OutboxEventService.class, LedgerService.class, IdempotencyService.class})
+@Import({TransferServiceImpl.class, AuditLogService.class, OutboxEventService.class, LedgerServiceImpl.class, IdempotencyService.class})
 public class TransferServiceIntegrationTest {
     @Autowired
     TestEntityManager em;

@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -30,6 +31,7 @@ public class ReconciliationController {
     private final ReconciliationService reconciliationService;
 
     @PostMapping("/runs")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")
     @Operation(summary = "Run reporting reconciliation for a completed-at window")
     public ResponseEntity<ApiResponse<ReconciliationRunResponse>> createRun(
             @Valid @RequestBody CreateReconciliationRunRequest request,
@@ -45,6 +47,7 @@ public class ReconciliationController {
     }
 
     @GetMapping("/runs/{id}")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")
     @Operation(summary = "Get reconciliation run detail")
     public ResponseEntity<ApiResponse<ReconciliationRunResponse>> getRun(
             @PathVariable UUID id,

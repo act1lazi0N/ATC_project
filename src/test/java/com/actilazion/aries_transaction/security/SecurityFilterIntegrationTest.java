@@ -4,6 +4,7 @@ import com.actilazion.aries_transaction.config.JwtService;
 import com.actilazion.aries_transaction.config.JwtConfig;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
+import com.actilazion.aries_transaction.identity.application.AuthenticatedUserPrincipal;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
@@ -191,6 +192,52 @@ class SecurityFilterIntegrationTest {
         assertThat(response.statusCode()).isEqualTo(401);
     }
 
+    @Test
+    void me_returnsAuthenticatedUserFromUuidSubject() throws Exception {
+        User user = savedUser(Role.USER, true);
+
+        HttpResponse<String> response = get("/api/v1/auth/me", tokenFor(user));
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.body()).contains(user.getId().toString());
+        assertThat(response.body()).contains(user.getEmail());
+    }
+
+    @Test
+    void refresh_withoutAllowedOrigin_forbidden() throws Exception {
+        HttpResponse<String> response = postWithoutAuthorization("/api/v1/auth/refresh", "{}");
+
+        assertThat(response.statusCode()).isEqualTo(403);
+        assertThat(response.body()).contains("Invalid refresh request origin");
+    }
+
+    @Test
+    void refresh_crossOrigin_forbidden() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/v1/auth/refresh"))
+                .header("Origin", "https://evil.example")
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(403);
+    }
+
+    @Test
+    void duplicateRegistration_doesNotExposeEmailExistence() throws Exception {
+        String email = "duplicate-" + UUID.randomUUID() + "@test.local";
+        String body = """
+                {"fullName":"Registration User","email":"%s","password":"password-123456"}
+                """.formatted(email);
+
+        assertThat(postWithoutAuthorization("/api/v1/auth/register", body).statusCode()).isEqualTo(201);
+        HttpResponse<String> duplicate = postWithoutAuthorization("/api/v1/auth/register", body);
+
+        assertThat(duplicate.statusCode()).isEqualTo(409);
+        assertThat(duplicate.body()).doesNotContain("already registered", email);
+        assertThat(duplicate.body()).contains("Registration request cannot be completed");
+    }
+
     private User savedUser(Role role, boolean active) {
         return userRepository.save(User.builder()
                 .fullName("Security Test User")
@@ -202,12 +249,7 @@ class SecurityFilterIntegrationTest {
     }
 
     private String tokenFor(User user) {
-        UserDetails principal = org.springframework.security.core.userdetails.User
-                .withUsername(user.getEmail())
-                .password(user.getPasswordHash())
-                .roles(user.getRole().name())
-                .build();
-        return jwtService.generateToken(principal);
+        return jwtService.generateToken(AuthenticatedUserPrincipal.from(user));
     }
 
     private String signedToken(User user, String issuer, String audience, String tokenType) {

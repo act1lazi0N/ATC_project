@@ -6,6 +6,8 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+
 @Getter
 @Setter
 @Component
@@ -14,6 +16,8 @@ public class ReportingClientProperties {
     private ReportingClientMode mode = ReportingClientMode.DISABLED;
     private String baseUrl;
     private String snapshotsPath = "/api/v1/reporting/transactions/snapshots";
+    private Duration connectTimeout = Duration.ofSeconds(2);
+    private Duration readTimeout = Duration.ofSeconds(5);
 
     @PostConstruct
     void validate() {
@@ -22,6 +26,10 @@ public class ReportingClientProperties {
         }
         if (snapshotsPath == null || snapshotsPath.isBlank() || !snapshotsPath.startsWith("/")) {
             throw new IllegalStateException("app.reconciliation.reporting.snapshots-path must start with /");
+        }
+        if (connectTimeout == null || connectTimeout.isZero() || connectTimeout.isNegative()
+                || readTimeout == null || readTimeout.isZero() || readTimeout.isNegative()) {
+            throw new IllegalStateException("reporting HTTP timeouts must be positive");
         }
     }
 

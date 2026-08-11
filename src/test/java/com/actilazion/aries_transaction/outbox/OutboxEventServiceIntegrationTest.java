@@ -74,7 +74,7 @@ class OutboxEventServiceIntegrationTest {
     void markFailed_recordsAttemptErrorAndBackoff() {
         OutboxEvent outboxEvent = outboxEventRepository.saveAndFlush(event(OutboxEventStatus.PROCESSING, null));
 
-        outboxEventService.markFailed(outboxEvent.getId(), "remote 503");
+        outboxEventService.markFailed(outboxEvent.getId(), outboxEvent.getClaimToken(), "remote 503");
 
         OutboxEvent failed = outboxEventRepository.findById(outboxEvent.getId()).orElseThrow();
         assertThat(failed.getStatus()).isEqualTo(OutboxEventStatus.FAILED);
@@ -90,11 +90,36 @@ class OutboxEventServiceIntegrationTest {
                 OffsetDateTime.now().plusMinutes(5)
         ));
 
-        outboxEventService.markPublished(outboxEvent.getId());
+        outboxEventService.markPublished(outboxEvent.getId(), outboxEvent.getClaimToken());
 
         OutboxEvent published = outboxEventRepository.findById(outboxEvent.getId()).orElseThrow();
         assertThat(published.getStatus()).isEqualTo(OutboxEventStatus.PUBLISHED);
         assertThat(published.getNextAttemptAt()).isNull();
+    }
+
+    @Test
+    void staleClaimCannotCompleteAfterEventIsReclaimed() {
+        OutboxEvent outboxEvent = outboxEventRepository.saveAndFlush(event(OutboxEventStatus.PENDING, null));
+
+        OutboxEvent firstClaim = outboxEventService.claimPublishableEvents(1).getFirst();
+        UUID firstToken = firstClaim.getClaimToken();
+        firstClaim.setNextAttemptAt(OffsetDateTime.now().minusSeconds(1));
+        outboxEventRepository.saveAndFlush(firstClaim);
+
+        OutboxEvent secondClaim = outboxEventService.claimPublishableEvents(1).getFirst();
+        UUID secondToken = secondClaim.getClaimToken();
+        assertThat(secondToken).isNotEqualTo(firstToken);
+
+        outboxEventService.markFailed(outboxEvent.getId(), firstToken, "stale worker");
+
+        OutboxEvent stillProcessing = outboxEventRepository.findById(outboxEvent.getId()).orElseThrow();
+        assertThat(stillProcessing.getStatus()).isEqualTo(OutboxEventStatus.PROCESSING);
+        assertThat(stillProcessing.getClaimToken()).isEqualTo(secondToken);
+        assertThat(stillProcessing.getAttemptCount()).isZero();
+
+        outboxEventService.markPublished(outboxEvent.getId(), secondToken);
+        assertThat(outboxEventRepository.findById(outboxEvent.getId()).orElseThrow().getStatus())
+                .isEqualTo(OutboxEventStatus.PUBLISHED);
     }
 
     private OutboxEvent event(OutboxEventStatus status, OffsetDateTime nextAttemptAt) {
@@ -105,6 +130,7 @@ class OutboxEventServiceIntegrationTest {
                 .payload(Map.of("transactionId", UUID.randomUUID().toString()))
                 .status(status)
                 .nextAttemptAt(nextAttemptAt)
+                .claimToken(status == OutboxEventStatus.PROCESSING ? UUID.randomUUID() : null)
                 .build();
     }
 }

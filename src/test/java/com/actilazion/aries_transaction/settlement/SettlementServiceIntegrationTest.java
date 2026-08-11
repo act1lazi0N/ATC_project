@@ -8,7 +8,7 @@ import com.actilazion.aries_transaction.audit.application.AuditLogService;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
-import com.actilazion.aries_transaction.ledger.application.LedgerService;
+import com.actilazion.aries_transaction.ledger.application.LedgerServiceImpl;
 import com.actilazion.aries_transaction.ledger.domain.LedgerDirection;
 import com.actilazion.aries_transaction.ledger.domain.LedgerEntryType;
 import com.actilazion.aries_transaction.ledger.infrastructure.LedgerEntryRepository;
@@ -55,7 +55,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
         TransferServiceImpl.class,
         AuditLogService.class,
         OutboxEventService.class,
-        LedgerService.class,
+        LedgerServiceImpl.class,
         IdempotencyService.class,
         SettlementServiceImpl.class
 })
@@ -252,6 +252,47 @@ class SettlementServiceIntegrationTest {
                 refund.completedAt().plusSeconds(2),
                 operator.getEmail()
         )).isInstanceOf(NoSettlementCandidateException.class);
+    }
+
+    @Test
+    @DisplayName("Refund completed after cutoff is settled only in a later adjustment")
+    void createBatch_refundAfterCutoff_isNotIncludedInBackdatedBatch() {
+        var transfer = transferService.transfer(transferRequest("1000.00"), sender.getEmail());
+        var refund = transferService.refund(
+                transfer.id(),
+                new RefundRequest(new BigDecimal("400.00"), UUID.randomUUID().toString(), "Refund after cutoff"),
+                operator.getEmail()
+        );
+        OffsetDateTime cutoff = transfer.completedAt().plusSeconds(1);
+        OffsetDateTime refundCompletedAt = cutoff.plusDays(1);
+        transactionRepository.findById(refund.id()).orElseThrow().setCompletedAt(refundCompletedAt);
+        em.flush();
+        em.clear();
+
+        var originalBatch = settlementService.createBatch(
+                "VND",
+                200,
+                "settle-key-cutoff-before-refund",
+                cutoff,
+                operator.getEmail()
+        );
+
+        assertThat(originalBatch.items()).hasSize(1);
+        assertThat(originalBatch.items().getFirst().transactionId()).isEqualTo(transfer.id());
+        assertThat(originalBatch.items().getFirst().grossAmount()).isEqualByComparingTo("1000.00");
+
+        var adjustmentBatch = settlementService.createBatch(
+                "VND",
+                200,
+                "settle-key-cutoff-after-refund",
+                refundCompletedAt.plusSeconds(1),
+                operator.getEmail()
+        );
+
+        assertThat(adjustmentBatch.items()).hasSize(1);
+        assertThat(adjustmentBatch.items().getFirst().transactionId()).isEqualTo(refund.id());
+        assertThat(adjustmentBatch.items().getFirst().itemType()).isEqualTo(SettlementItemType.ADJUSTMENT);
+        assertThat(adjustmentBatch.items().getFirst().grossAmount()).isEqualByComparingTo("400.00");
     }
 
     @Test

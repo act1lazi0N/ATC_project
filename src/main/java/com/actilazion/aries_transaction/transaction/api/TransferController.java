@@ -47,7 +47,7 @@ public class TransferController {
     @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")
     @Operation(summary = "Reverse a completed transaction")
     public ResponseEntity<ApiResponse<TransactionResponse>> reverse(
-            @PathVariable("id") UUID id,
+            @PathVariable UUID id,
             @Valid @RequestBody ReversalRequest request,
             @AuthenticationPrincipal UserDetails userDetails
     ) {
@@ -59,7 +59,7 @@ public class TransferController {
     @PostMapping("/{id}/refund")
     @Operation(summary = "Refund a completed transaction")
     public ResponseEntity<ApiResponse<TransactionResponse>> refund(
-            @PathVariable("id") UUID id,
+            @PathVariable UUID id,
             @Valid @RequestBody RefundRequest request,
             @AuthenticationPrincipal UserDetails userDetails
     ) {
@@ -71,7 +71,7 @@ public class TransferController {
     @GetMapping("/{id}")
     @Operation(summary = "Get transaction detail by ID")
     public ResponseEntity<ApiResponse<TransactionResponse>> getById(
-            @PathVariable("id") UUID id,
+            @PathVariable UUID id,
             @AuthenticationPrincipal UserDetails userDetails
     ) {
         return ResponseEntity.ok(ApiResponse.ok(

@@ -15,6 +15,7 @@ import com.actilazion.aries_transaction.identity.dto.RegisterRequest;
 import com.actilazion.aries_transaction.identity.dto.UserResponse;
 import com.actilazion.aries_transaction.identity.infrastructure.RefreshSessionRepository;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
+import com.actilazion.aries_transaction.common.redis.SecurityKeyHasher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -30,6 +31,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.UUID;
@@ -46,6 +48,8 @@ public class AuthServiceImpl implements AuthService {
     private final AuthenticationManager authenticationManager;
     private final RefreshSessionRepository refreshSessionRepository;
     private final LoginProtectionConfig loginProtectionConfig;
+    private final LoginAttemptStore loginAttemptStore;
+    private final SecurityKeyHasher securityKeyHasher;
     private final IdentityAuditService identityAuditService;
     private final SecureRandom secureRandom = new SecureRandom();
 
@@ -88,6 +92,7 @@ public class AuthServiceImpl implements AuthService {
     public AuthResponse login(LoginRequest request, String ipAddress) {
         String email = normalizeEmail(request.email());
         validatePasswordLength(request.password());
+        loginAttemptStore.ensureAvailable();
         User user = userRepository.findByEmailWithLock(email).orElse(null);
         if (user != null && isLocked(user, OffsetDateTime.now())) {
             identityAuditService.record(IdentityAuditEventType.LOGIN_LOCKED, user.getId(), email, ipAddress, Map.of());
@@ -100,7 +105,7 @@ public class AuthServiceImpl implements AuthService {
             );
         } catch (AuthenticationException ex) {
             if (user != null) {
-                boolean locked = recordFailedLogin(user, OffsetDateTime.now());
+                boolean locked = recordFailedLogin(user, email, OffsetDateTime.now());
                 userRepository.save(user);
                 identityAuditService.record(locked ? IdentityAuditEventType.LOGIN_LOCKED : IdentityAuditEventType.LOGIN_FAILED,
                         user.getId(), email, ipAddress, Map.of());
@@ -111,6 +116,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         user = userRepository.findByEmailWithLock(email).orElseThrow(this::unauthorized);
+        loginAttemptStore.clear(loginAttemptKey(email, user));
         user.setFailedLoginAttempts(0);
         user.setLockedUntil(null);
         userRepository.save(user);
@@ -220,15 +226,25 @@ public class AuthServiceImpl implements AuthService {
         return new AppException("Unauthorized", HttpStatus.UNAUTHORIZED) {};
     }
 
-    private boolean recordFailedLogin(User user, OffsetDateTime now) {
-        int attempts = user.getFailedLoginAttempts() + 1;
-        user.setFailedLoginAttempts(attempts);
+    private boolean recordFailedLogin(User user, String email, OffsetDateTime now) {
+        long attempts = loginAttemptStore.recordFailure(
+                loginAttemptKey(email, user),
+                Duration.ofSeconds(loginProtectionConfig.getLockDurationSeconds())
+        );
+        user.setFailedLoginAttempts((int) Math.min(attempts, loginProtectionConfig.getMaxFailedAttempts()));
         if (attempts >= loginProtectionConfig.getMaxFailedAttempts()) {
             user.setLockedUntil(now.plusSeconds(loginProtectionConfig.getLockDurationSeconds()));
             log.warn("[AUTH] Login temporarily locked userId={}", user.getId());
             return true;
         }
         return false;
+    }
+
+    private String loginAttemptKey(String email, User user) {
+        if (user != null && user.getId() != null) {
+            return "user:" + user.getId();
+        }
+        return "email:" + securityKeyHasher.hash(email);
     }
 
     private void validatePasswordLength(String password) {

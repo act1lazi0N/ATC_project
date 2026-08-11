@@ -49,6 +49,18 @@ public class GlobalExceptionHandler {
                 ));
     }
 
+    @ExceptionHandler(RateLimitExceededException.class)
+    public ResponseEntity<ErrorResponse> handleRateLimit(RateLimitExceededException ex) {
+        return ResponseEntity
+                .status(ex.getHttpStatus())
+                .header("Retry-After", Long.toString(ex.getRetryAfterSeconds()))
+                .body(new ErrorResponse(
+                        ex.getHttpStatus().value(),
+                        ex.getMessage(),
+                        null
+                ));
+    }
+
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthentication(AuthenticationException ex) {
         return ResponseEntity

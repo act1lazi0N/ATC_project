@@ -29,7 +29,7 @@ spring:
     redis:
       host: localhost
       port: 6379
-      timeout: 2000ms
+      timeout: 250ms
 
 jwt:
   secret: ${JWT_SECRET}
@@ -42,10 +42,16 @@ jwt:
   token-type: access
 
 security:
+  ephemeral:
+    enabled: ${SECURITY_EPHEMERAL_ENABLED:true}
+    key-prefix: ${SECURITY_EPHEMERAL_KEY_PREFIX:aries:transaction:dev:v1}
+    key-hash-secret: ${SECURITY_EPHEMERAL_KEY_HASH_SECRET:${JWT_SECRET}}
+    command-timeout-ms: ${SECURITY_EPHEMERAL_COMMAND_TIMEOUT_MS:250}
   auth-rate-limit:
     window-seconds: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:60}
     ip-requests: ${AUTH_RATE_LIMIT_IP_REQUESTS:60}
     identity-requests: ${AUTH_RATE_LIMIT_IDENTITY_REQUESTS:10}
+    trusted-proxies: ${AUTH_RATE_LIMIT_TRUSTED_PROXIES:}
   refresh-cookie:
     allowed-origins: ${AUTH_REFRESH_ALLOWED_ORIGINS:http://localhost:3000}
 

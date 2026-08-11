@@ -1,57 +1,49 @@
 package com.actilazion.aries_transaction.config;
 
 import com.actilazion.aries_transaction.common.exception.RateLimitExceededException;
+import com.actilazion.aries_transaction.common.redis.AuthRateLimitStore;
+import com.actilazion.aries_transaction.common.redis.SecurityKeyHasher;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.time.Clock;
-import java.time.Instant;
-import java.util.HexFormat;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.time.Duration;
+import java.util.Locale;
 
 @Component
-@RequiredArgsConstructor
 public class AuthRateLimiter {
     private final AuthRateLimitConfig config;
-    private final Clock clock = Clock.systemUTC();
-    private final ConcurrentMap<String, Window> windows = new ConcurrentHashMap<>();
+    private final AuthRateLimitStore store;
+    private final SecurityKeyHasher keyHasher;
+    private final ClientIpResolver clientIpResolver;
+
+    public AuthRateLimiter(
+            AuthRateLimitConfig config,
+            AuthRateLimitStore store,
+            SecurityKeyHasher keyHasher,
+            ClientIpResolver clientIpResolver
+    ) {
+        this.config = config;
+        this.store = store;
+        this.keyHasher = keyHasher;
+        this.clientIpResolver = clientIpResolver;
+    }
 
     public void check(String endpoint, HttpServletRequest request, String identity) {
-        checkBucket(endpoint + ":ip:" + request.getRemoteAddr(), config.getIpRequests());
+        Duration window = Duration.ofSeconds(config.getWindowSeconds());
+        checkBucket(endpoint + ":ip:" + keyHasher.hash(clientIpResolver.resolve(request)), config.getIpRequests(), window);
         if (identity != null && !identity.isBlank()) {
-            checkBucket(endpoint + ":identity:" + digest(identity.trim().toLowerCase()), config.getIdentityRequests());
+            String normalizedIdentity = "refresh".equals(endpoint)
+                    ? identity.trim()
+                    : identity.trim().toLowerCase(Locale.ROOT);
+            checkBucket(endpoint + ":identity:" + keyHasher.hash(normalizedIdentity),
+                    config.getIdentityRequests(), window);
         }
     }
 
-    private void checkBucket(String key, int limit) {
-        Instant now = clock.instant();
-        Window window = windows.compute(key, (ignored, current) -> {
-            if (current == null || current.expiresAt().isBefore(now)) {
-                return new Window(now.plusSeconds(config.getWindowSeconds()), 1);
-            }
-            if (current.count() >= limit) {
-                throw new RateLimitExceededException();
-            }
-            return new Window(current.expiresAt(), current.count() + 1);
-        });
-        if (window == null) {
-            throw new RateLimitExceededException();
+    private void checkBucket(String key, int limit, Duration window) {
+        var decision = store.increment(key, limit, window);
+        if (!decision.allowed()) {
+            throw new RateLimitExceededException(decision.retryAfterSeconds());
         }
     }
-
-    private String digest(String value) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException ex) {
-            throw new IllegalStateException("SHA-256 unavailable", ex);
-        }
-    }
-
-    private record Window(Instant expiresAt, int count) { }
 }

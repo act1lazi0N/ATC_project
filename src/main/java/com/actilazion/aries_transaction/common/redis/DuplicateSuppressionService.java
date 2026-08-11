@@ -3,7 +3,6 @@ package com.actilazion.aries_transaction.common.redis;
 import com.actilazion.aries_transaction.common.exception.AppException;
 import com.actilazion.aries_transaction.config.RedisEphemeralProperties;
 import com.actilazion.aries_transaction.config.RedisKeyNamespace;
-import com.actilazion.aries_transaction.common.redis.SecurityKeyHasher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 

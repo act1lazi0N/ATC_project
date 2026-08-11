@@ -94,6 +94,6 @@ public class TransferController {
     }
 
     private <T> T execute(String op, String owner, String key, String fingerprint, java.util.function.Supplier<T> action) {
-        return duplicateSuppression == null ? action.get() : duplicateSuppression.execute(op, owner, key, fingerprint, action);
+        return duplicateSuppression.execute(op, owner, key, fingerprint, action);
     }
 }

@@ -21,6 +21,7 @@ import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -108,6 +109,23 @@ public class IdempotencyService {
         record.setStatus(IdempotencyRecordStatus.COMPLETED);
         record.setCompletedAt(OffsetDateTime.now());
         idempotencyRecordRepository.save(record);
+    }
+
+    public TransactionResponse responseFromPayload(IdempotencyRecord record, String idempotencyKey) {
+        if (record.getStatus() != IdempotencyRecordStatus.COMPLETED || record.getResponsePayload() == null) {
+            throw new DuplicateTransferException(idempotencyKey);
+        }
+        Map<String, Object> p = record.getResponsePayload();
+        return new TransactionResponse(
+                UUID.fromString((String) p.get("id")), UUID.fromString((String) p.get("fromAccountId")),
+                UUID.fromString((String) p.get("toAccountId")), new java.math.BigDecimal((String) p.get("amount")),
+                (String) p.get("currency"), com.actilazion.aries_transaction.transaction.domain.TransactionStatus.valueOf((String) p.get("status")),
+                (String) p.get("idempotencyKey"), (String) p.get("description"), (String) p.get("failureReason"),
+                p.get("originalTransactionId") == null ? null : UUID.fromString((String) p.get("originalTransactionId")),
+                p.get("refundedAmount") == null ? null : new java.math.BigDecimal((String) p.get("refundedAmount")),
+                p.get("createdAt") == null ? null : OffsetDateTime.parse((String) p.get("createdAt")),
+                p.get("completedAt") == null ? null : OffsetDateTime.parse((String) p.get("completedAt"))
+        );
     }
 
     public boolean matchesRequest(IdempotencyRecord record, TransferRequest request) {

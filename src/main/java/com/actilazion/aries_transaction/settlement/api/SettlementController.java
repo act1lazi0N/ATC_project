@@ -2,6 +2,7 @@ package com.actilazion.aries_transaction.settlement.api;
 
 import com.actilazion.aries_transaction.common.dto.ApiResponse;
 import com.actilazion.aries_transaction.settlement.application.SettlementService;
+import com.actilazion.aries_transaction.common.redis.DuplicateSuppressionService;
 import com.actilazion.aries_transaction.settlement.dto.CreateSettlementBatchRequest;
 import com.actilazion.aries_transaction.settlement.dto.SettlementBatchResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,6 +30,7 @@ import java.util.UUID;
 @SecurityRequirement(name = "bearerAuth")
 public class SettlementController {
     private final SettlementService settlementService;
+    private final DuplicateSuppressionService duplicateSuppression;
 
     @PostMapping("/batches")
     @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")
@@ -37,13 +39,9 @@ public class SettlementController {
             @Valid @RequestBody CreateSettlementBatchRequest request,
             @AuthenticationPrincipal UserDetails userDetails
     ) {
-        SettlementBatchResponse response = settlementService.createBatch(
-                request.currency(),
-                request.feeRateBps(),
-                request.idempotencyKey(),
-                request.cutoffCompletedAt(),
-                userDetails.getUsername()
-        );
+        SettlementBatchResponse response = execute("settlement", userDetails.getUsername(), request.idempotencyKey(), request.toString(),
+                () -> settlementService.createBatch(request.currency(), request.feeRateBps(), request.idempotencyKey(),
+                        request.cutoffCompletedAt(), userDetails.getUsername()));
         return ResponseEntity.ok(ApiResponse.ok("Settlement batch created", response));
     }
 
@@ -58,5 +56,9 @@ public class SettlementController {
                 "Settlement batch detail",
                 settlementService.getBatch(id, userDetails.getUsername())
         ));
+    }
+
+    private <T> T execute(String op, String owner, String key, String fingerprint, java.util.function.Supplier<T> action) {
+        return duplicateSuppression == null ? action.get() : duplicateSuppression.execute(op, owner, key, fingerprint, action);
     }
 }

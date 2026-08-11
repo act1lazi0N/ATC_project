@@ -24,4 +24,10 @@ public class RedisEphemeralProperties {
 
     @Min(50)
     private long commandTimeoutMs = 250;
+
+    @Min(1)
+    private long duplicateSuppressionTtlSeconds = 30;
+
+    @Min(1)
+    private long replayCacheTtlSeconds = 300;
 }

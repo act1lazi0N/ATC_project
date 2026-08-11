@@ -47,6 +47,8 @@ security:
     key-prefix: ${SECURITY_EPHEMERAL_KEY_PREFIX:aries:transaction:dev:v1}
     key-hash-secret: ${SECURITY_EPHEMERAL_KEY_HASH_SECRET:${JWT_SECRET}}
     command-timeout-ms: ${SECURITY_EPHEMERAL_COMMAND_TIMEOUT_MS:250}
+    duplicate-suppression-ttl-seconds: ${SECURITY_EPHEMERAL_DUPLICATE_TTL_SECONDS:30}
+    replay-cache-ttl-seconds: ${SECURITY_EPHEMERAL_REPLAY_TTL_SECONDS:300}
   auth-rate-limit:
     window-seconds: ${AUTH_RATE_LIMIT_WINDOW_SECONDS:60}
     ip-requests: ${AUTH_RATE_LIMIT_IP_REQUESTS:60}
@@ -87,4 +89,18 @@ logging:
     com.actilazion.aries_transaction: INFO
     org.springframework.security: INFO
     org.hibernate.SQL: WARN
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  health:
+    redis:
+      enabled: ${SECURITY_EPHEMERAL_ENABLED:true}
 

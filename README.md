@@ -59,6 +59,10 @@ transaction      transfer, reversal, refund, idempotency, state guards
 - Settlement batch generation with gross, fee, and net amounts.
 - Reporting reconciliation runs that classify missing, duplicate, unexpected, amount mismatch, and status mismatch cases.
 
+## Redis ephemeral controls
+
+Redis is advisory only; PostgreSQL remains the source of truth. Redis protects auth rate limits, login counters, and short-lived duplicate suppression for transfer, reversal, refund, and settlement commands. Redis failures bypass duplicate suppression but fail closed for authentication protection. All keys are namespaced and HMAC-derived; TTLs are bounded by configuration. The Compose Redis instance uses `noeviction` and disables persistence because these values are disposable.
+
 ## Financial Invariants
 
 Transfer processing is synchronous and transactional. A completed transfer is expected to persist all of these in one database transaction:

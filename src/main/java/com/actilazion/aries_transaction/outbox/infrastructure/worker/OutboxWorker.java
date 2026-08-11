@@ -24,7 +24,7 @@ public class OutboxWorker {
 
     @Scheduled(fixedDelayString = "${app.outbox.poll-interval-ms:5000}")
     public void publishPendingEvents() {
-        List<OutboxEvent> events = outboxEventService.findPendingEvents(batchSize);
+        List<OutboxEvent> events = outboxEventService.claimPublishableEvents(batchSize);
         if (events.isEmpty()) {
             return;
         }
@@ -39,14 +39,19 @@ public class OutboxWorker {
         try {
             boolean delivered = outboxEventPublisher.publish(event);
             if (delivered) {
-                outboxEventService.markPublished(event.getId());
+                outboxEventService.markPublished(event.getId(), event.getClaimToken());
                 return;
             }
 
             log.info("[OUTBOX] Event remains pending id={} publisher did not confirm delivery", event.getId());
+            outboxEventService.markFailed(
+                    event.getId(),
+                    event.getClaimToken(),
+                    "Publisher did not confirm delivery"
+            );
         } catch (Exception ex) {
             log.error("[OUTBOX] Event delivery failed id={} error={}", event.getId(), ex.getMessage(), ex);
-            outboxEventService.markFailed(event.getId());
+            outboxEventService.markFailed(event.getId(), event.getClaimToken(), ex.getMessage());
         }
     }
 }

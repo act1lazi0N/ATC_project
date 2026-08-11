@@ -14,8 +14,8 @@ import java.util.UUID;
 @Table(
     name = "transactions",
     uniqueConstraints = @UniqueConstraint(
-        name = "uk_transactions_idempotency_key",
-        columnNames = {"idempotency_key", "initiated_by"}
+        name = "uk_transactions_idempotency_scope",
+        columnNames = {"idempotency_key", "operation", "initiated_by"}
     )
 )
 @Getter
@@ -56,6 +56,11 @@ public class Transaction {
     @Column(nullable = false, length = 20)
     @Builder.Default
     private TransactionStatus status = TransactionStatus.PENDING;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30, updatable = false)
+    @Builder.Default
+    private TransactionOperation operation = TransactionOperation.TRANSFER;
 
     @Column(name = "idempotency_key", nullable = false, length = 64, updatable = false)
     private String idempotencyKey;

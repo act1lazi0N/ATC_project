@@ -2,6 +2,7 @@ package com.actilazion.aries_transaction.settlement.api;
 
 import com.actilazion.aries_transaction.common.dto.ApiResponse;
 import com.actilazion.aries_transaction.settlement.application.SettlementService;
+import com.actilazion.aries_transaction.common.redis.DuplicateSuppressionService;
 import com.actilazion.aries_transaction.settlement.dto.CreateSettlementBatchRequest;
 import com.actilazion.aries_transaction.settlement.dto.SettlementBatchResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -11,6 +12,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -28,24 +30,23 @@ import java.util.UUID;
 @SecurityRequirement(name = "bearerAuth")
 public class SettlementController {
     private final SettlementService settlementService;
+    private final DuplicateSuppressionService duplicateSuppression;
 
     @PostMapping("/batches")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")
     @Operation(summary = "Create a settlement batch from completed unsettled transactions")
     public ResponseEntity<ApiResponse<SettlementBatchResponse>> createBatch(
             @Valid @RequestBody CreateSettlementBatchRequest request,
             @AuthenticationPrincipal UserDetails userDetails
     ) {
-        SettlementBatchResponse response = settlementService.createBatch(
-                request.currency(),
-                request.feeRateBps(),
-                request.idempotencyKey(),
-                request.cutoffCompletedAt(),
-                userDetails.getUsername()
-        );
+        SettlementBatchResponse response = execute("settlement", userDetails.getUsername(), request.idempotencyKey(), request.toString(),
+                () -> settlementService.createBatch(request.currency(), request.feeRateBps(), request.idempotencyKey(),
+                        request.cutoffCompletedAt(), userDetails.getUsername()));
         return ResponseEntity.ok(ApiResponse.ok("Settlement batch created", response));
     }
 
     @GetMapping("/batches/{id}")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")
     @Operation(summary = "Get settlement batch detail")
     public ResponseEntity<ApiResponse<SettlementBatchResponse>> getBatch(
             @PathVariable UUID id,
@@ -55,5 +56,9 @@ public class SettlementController {
                 "Settlement batch detail",
                 settlementService.getBatch(id, userDetails.getUsername())
         ));
+    }
+
+    private <T> T execute(String op, String owner, String key, String fingerprint, java.util.function.Supplier<T> action) {
+        return duplicateSuppression.execute(op, owner, key, fingerprint, action);
     }
 }

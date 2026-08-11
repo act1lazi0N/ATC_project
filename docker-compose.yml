@@ -23,7 +23,7 @@ services:
     image: redis:7-alpine
     container_name: transfer_redis
     restart: unless-stopped
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 256mb --maxmemory-policy noeviction --save "" --appendonly no
     ports:
       - "127.0.0.1:6379:6379"
     volumes:
@@ -53,6 +53,7 @@ services:
       # Redis
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
+      SECURITY_EPHEMERAL_KEY_HASH_SECRET: ${SECURITY_EPHEMERAL_KEY_HASH_SECRET:?SECURITY_EPHEMERAL_KEY_HASH_SECRET is required}
 
       # Flyway
       SPRING_FLYWAY_ENABLED: "true"

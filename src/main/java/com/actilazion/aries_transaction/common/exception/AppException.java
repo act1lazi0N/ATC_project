@@ -12,4 +12,9 @@ public abstract class AppException extends RuntimeException{
         this.httpStatus = httpStatus;
     }
 
+    protected AppException(String message, HttpStatus httpStatus, Throwable cause) {
+        super(message, cause);
+        this.httpStatus = httpStatus;
+    }
+
 }

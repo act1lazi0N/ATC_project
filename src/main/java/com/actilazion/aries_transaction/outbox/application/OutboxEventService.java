@@ -7,9 +7,11 @@ import com.actilazion.aries_transaction.outbox.domain.OutboxEventStatus;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEventType;
 import com.actilazion.aries_transaction.outbox.infrastructure.OutboxEventRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,6 +21,10 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class OutboxEventService {
+    private static final int MAX_ERROR_LENGTH = 500;
+    private static final Duration MAX_RETRY_DELAY = Duration.ofMinutes(5);
+    private static final Duration PROCESSING_LEASE_DURATION = Duration.ofMinutes(5);
+
     private final OutboxEventRepository outboxEventRepository;
 
     @Transactional
@@ -67,20 +73,71 @@ public class OutboxEventService {
     }
 
     @Transactional
-    public void markPublished(UUID eventId) {
-        OutboxEvent event = outboxEventRepository.findById(eventId)
-                .orElseThrow(() -> new IllegalArgumentException("Outbox event not found: " + eventId));
-        event.setStatus(OutboxEventStatus.PUBLISHED);
-        event.setPublishedAt(OffsetDateTime.now());
-        outboxEventRepository.save(event);
+    public List<OutboxEvent> claimPublishableEvents(int limit) {
+        OffsetDateTime now = OffsetDateTime.now();
+        List<OutboxEvent> events = outboxEventRepository.findPublishableEventsWithLock(
+                List.of(OutboxEventStatus.PENDING, OutboxEventStatus.FAILED, OutboxEventStatus.PROCESSING),
+                now,
+                PageRequest.of(0, limit)
+        );
+        events.forEach(event -> {
+            event.setStatus(OutboxEventStatus.PROCESSING);
+            event.setLastError(null);
+            event.setNextAttemptAt(now.plus(PROCESSING_LEASE_DURATION));
+            event.setClaimToken(UUID.randomUUID());
+        });
+        return outboxEventRepository.saveAllAndFlush(events);
     }
 
     @Transactional
-    public void markFailed(UUID eventId) {
-        OutboxEvent event = outboxEventRepository.findById(eventId)
-                .orElseThrow(() -> new IllegalArgumentException("Outbox event not found: " + eventId));
-        event.setStatus(OutboxEventStatus.FAILED);
-        outboxEventRepository.save(event);
+    public void markPublished(UUID eventId, UUID claimToken) {
+        var event = outboxEventRepository.findByIdAndStatusAndClaimToken(
+                eventId,
+                OutboxEventStatus.PROCESSING,
+                claimToken
+        );
+        if (event.isEmpty()) {
+            return;
+        }
+        OutboxEvent claimedEvent = event.get();
+        claimedEvent.setStatus(OutboxEventStatus.PUBLISHED);
+        claimedEvent.setPublishedAt(OffsetDateTime.now());
+        claimedEvent.setLastError(null);
+        claimedEvent.setNextAttemptAt(null);
+        claimedEvent.setClaimToken(null);
+        outboxEventRepository.save(claimedEvent);
+    }
+
+    @Transactional
+    public void markFailed(UUID eventId, UUID claimToken, String errorMessage) {
+        var event = outboxEventRepository.findByIdAndStatusAndClaimToken(
+                eventId,
+                OutboxEventStatus.PROCESSING,
+                claimToken
+        );
+        if (event.isEmpty()) {
+            return;
+        }
+        OutboxEvent claimedEvent = event.get();
+        int nextAttempt = claimedEvent.getAttemptCount() + 1;
+        claimedEvent.setAttemptCount(nextAttempt);
+        claimedEvent.setStatus(OutboxEventStatus.FAILED);
+        claimedEvent.setLastError(truncate(errorMessage));
+        claimedEvent.setNextAttemptAt(OffsetDateTime.now().plus(backoffFor(nextAttempt)));
+        claimedEvent.setClaimToken(null);
+        outboxEventRepository.save(claimedEvent);
+    }
+
+    private Duration backoffFor(int attemptCount) {
+        long seconds = Math.min(MAX_RETRY_DELAY.toSeconds(), 1L << Math.min(attemptCount, 8));
+        return Duration.ofSeconds(seconds);
+    }
+
+    private String truncate(String value) {
+        if (value == null || value.length() <= MAX_ERROR_LENGTH) {
+            return value;
+        }
+        return value.substring(0, MAX_ERROR_LENGTH);
     }
 
     private Map<String, Object> toPayload(Transaction tx) {

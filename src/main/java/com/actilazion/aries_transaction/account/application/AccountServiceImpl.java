@@ -4,47 +4,65 @@ import com.actilazion.aries_transaction.account.dto.CreateAccountRequest;
 import com.actilazion.aries_transaction.account.dto.AccountResponse;
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.account.domain.AccountType;
+import com.actilazion.aries_transaction.account.domain.exception.AccountNumberGenerationException;
 import com.actilazion.aries_transaction.account.domain.exception.InternalAccountTypeException;
 import com.actilazion.aries_transaction.identity.domain.User;
+import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.account.domain.AccountStatus;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
+import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
 import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Random;
 import java.util.UUID;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AccountServiceImpl implements AccountService {
+    private static final int ACCOUNT_NUMBER_MAX_ATTEMPTS = 5;
+
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
+    private final AccountCreationAttempt accountCreationAttempt;
 
     @Override
-    @Transactional
     public AccountResponse create(CreateAccountRequest request, String ownerEmail) {
         validatePublicAccountType(request.accountType());
-        User owner = userRepository.findByEmail(ownerEmail)
-                .orElseThrow(() -> new ResourceNotFoundException("User", ownerEmail));
-        Account account = Account.builder()
-                .user(owner)
-                .accountNumber(generateAccountNumber())
-                .accountType(request.accountType())
-                .balance(BigDecimal.ZERO)
-                .currency(request.currency())
-                .status(AccountStatus.ACTIVE)
-                .build();
+        for (int attempt = 1; attempt <= ACCOUNT_NUMBER_MAX_ATTEMPTS; attempt++) {
+            try {
+                return accountCreationAttempt.create(request, ownerEmail);
+            } catch (DataIntegrityViolationException ex) {
+                if (!isAccountNumberCollision(ex)) {
+                    throw ex;
+                }
+                if (attempt == ACCOUNT_NUMBER_MAX_ATTEMPTS) {
+                    throw new AccountNumberGenerationException(ACCOUNT_NUMBER_MAX_ATTEMPTS, ex);
+                }
+                log.warn("[ACCOUNT] Account number collision, retrying attempt={}", attempt + 1);
+            }
+        }
+        throw new AccountNumberGenerationException(ACCOUNT_NUMBER_MAX_ATTEMPTS, null);
+    }
 
-        Account saved = accountRepository.save(account);
-        log.info("[ACCOUNT] Created accountId={} owner={}", saved.getId(), ownerEmail);
-        return AccountResponse.from(saved);
+    private boolean isAccountNumberCollision(DataIntegrityViolationException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            if (cause instanceof ConstraintViolationException violation) {
+                return "uk_accounts_number".equals(violation.getConstraintName());
+            }
+            if (cause.getMessage() != null && cause.getMessage().contains("uk_accounts_number")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void validatePublicAccountType(AccountType accountType) {
@@ -57,10 +75,17 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     @Transactional(readOnly = true)
-    public AccountResponse getById(UUID accountId) {
-        return accountRepository.findById(accountId)
-                .map(AccountResponse::from)
+    public AccountResponse getById(UUID accountId, String requesterEmail) {
+        Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
+        User requester = userRepository.findByEmail(requesterEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User", requesterEmail));
+        if (!account.getUser().getId().equals(requester.getId())
+                && requester.getRole() != Role.OPERATOR
+                && requester.getRole() != Role.ADMIN) {
+            throw new ForbiddenOperationException("Not allowed to read this account");
+        }
+        return AccountResponse.from(account);
     }
 
     @Override
@@ -76,18 +101,17 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     @Transactional
-    public AccountResponse freeze(UUID accountId) {
+    public AccountResponse freeze(UUID accountId, String requesterEmail) {
+        User requester = userRepository.findByEmail(requesterEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User", requesterEmail));
+        if (requester.getRole() != Role.OPERATOR
+                && requester.getRole() != Role.ADMIN) {
+            throw new ForbiddenOperationException("Not allowed to freeze this account");
+        }
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
         account.setStatus(AccountStatus.FROZEN);
         return AccountResponse.from(accountRepository.save(account));
     }
 
-    private String generateAccountNumber() {
-        String number;
-        do {
-            number = String.format("%012d", new Random().nextLong(1_000_000_000_000L));
-        } while (accountRepository.existsByAccountNumber(number));
-        return number;
-    }
 }

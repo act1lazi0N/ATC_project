@@ -14,6 +14,6 @@ public record RegisterRequest(
         String email,
 
         @NotBlank(message = "password is required")
-        @Size(min = 8, message = "password must be at least 8 characters")
+        @Size(min = 8, max = 72, message = "password must be between 8 and 72 characters")
         String password
 ) { }

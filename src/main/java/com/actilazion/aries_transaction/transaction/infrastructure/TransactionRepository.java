@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.List;
 import java.time.OffsetDateTime;
@@ -34,24 +35,53 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
         Pageable pageable
     );
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
     SELECT t FROM Transaction t
-    WHERE t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.COMPLETED
-      AND t.currency = :currency
+    WHERE t.currency = :currency
       AND t.completedAt <= :cutoffCompletedAt
-      AND t.originalTransaction IS NULL
-      AND NOT EXISTS (
-          SELECT 1 FROM Transaction related
-          WHERE related.originalTransaction = t
-      )
       AND NOT EXISTS (
           SELECT 1 FROM SettlementItem item
           WHERE item.transaction = t
+      )
+      AND (
+          (
+              t.originalTransaction IS NULL
+              AND (
+                  t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.COMPLETED
+                  OR t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.PARTIALLY_REFUNDED
+                  OR t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.REFUNDED
+              )
+          )
+          OR (
+              t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.COMPLETED
+              AND
+              t.originalTransaction IS NOT NULL
+              AND EXISTS (
+                  SELECT 1 FROM SettlementItem originalItem
+                  WHERE originalItem.transaction = t.originalTransaction
+                    AND originalItem.itemType = com.actilazion.aries_transaction.settlement.domain.SettlementItemType.NORMAL
+                    AND t.completedAt > originalItem.createdAt
+              )
+          )
       )
     ORDER BY t.completedAt ASC
     """)
     List<Transaction> findSettlementCandidates(
             @Param("currency") String currency,
+            @Param("cutoffCompletedAt") OffsetDateTime cutoffCompletedAt
+    );
+
+    @Query("""
+    SELECT COALESCE(SUM(t.amount), 0)
+    FROM Transaction t
+    WHERE t.originalTransaction.id = :originalTransactionId
+      AND t.operation = com.actilazion.aries_transaction.transaction.domain.TransactionOperation.REFUND
+      AND t.status = com.actilazion.aries_transaction.transaction.domain.TransactionStatus.COMPLETED
+      AND t.completedAt <= :cutoffCompletedAt
+    """)
+    BigDecimal sumCompletedRefundAmount(
+            @Param("originalTransactionId") UUID originalTransactionId,
             @Param("cutoffCompletedAt") OffsetDateTime cutoffCompletedAt
     );
 

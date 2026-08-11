@@ -67,4 +67,17 @@ public class OutboxEvent {
 
     @Column(name = "published_at")
     private OffsetDateTime publishedAt;
+
+    @Column(name = "attempt_count", nullable = false)
+    @Builder.Default
+    private int attemptCount = 0;
+
+    @Column(name = "next_attempt_at")
+    private OffsetDateTime nextAttemptAt;
+
+    @Column(name = "last_error", length = 500)
+    private String lastError;
+
+    @Column(name = "claim_token")
+    private UUID claimToken;
 }

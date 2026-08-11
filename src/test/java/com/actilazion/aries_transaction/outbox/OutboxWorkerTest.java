@@ -33,13 +33,18 @@ class OutboxWorkerTest {
                 .aggregateId(UUID.randomUUID())
                 .eventType("TransferCompleted")
                 .status(OutboxEventStatus.PENDING)
+                .claimToken(UUID.randomUUID())
                 .build();
 
-        when(outboxEventService.findPendingEvents(25)).thenReturn(List.of(event));
+        when(outboxEventService.claimPublishableEvents(25)).thenReturn(List.of(event));
 
         worker.publishPendingEvents();
 
-        verify(outboxEventService, never()).markPublished(any());
-        verify(outboxEventService, never()).markFailed(any());
+        verify(outboxEventService, never()).markPublished(any(), any());
+        verify(outboxEventService).markFailed(
+                event.getId(),
+                event.getClaimToken(),
+                "Publisher did not confirm delivery"
+        );
     }
 }

@@ -52,7 +52,7 @@ Thumbs.db
 
 # Logs
 *.log
-logs/
+.codex/logs/
 
 # Docker volume data
 postgres_data/

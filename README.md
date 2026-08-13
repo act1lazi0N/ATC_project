@@ -170,10 +170,26 @@ OpenAPI is disabled by default outside dev-oriented usage.
 
 ## Run With Docker Compose
 
+Copy `.env.example` to `.env` and set strong values for `JWT_SECRET`,
+`SECURITY_EPHEMERAL_KEY_HASH_SECRET`, and `POSTGRES_PASSWORD` before starting.
+
+On Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+notepad .env
+```
+
 Start PostgreSQL, Redis, and the app:
 
 ```bash
 docker compose up -d
+```
+
+To rebuild the application image after source changes:
+
+```bash
+docker compose up -d --build
 ```
 
 Follow app logs:

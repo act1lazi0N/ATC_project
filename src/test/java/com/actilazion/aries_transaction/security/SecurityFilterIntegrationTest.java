@@ -151,6 +151,25 @@ class SecurityFilterIntegrationTest {
     }
 
     @Test
+    void register_returnsCompleteUserForFrontendSession() throws Exception {
+        String email = "register-response-" + UUID.randomUUID() + "@test.local";
+
+        HttpResponse<String> response = postWithoutAuthorization("/api/v1/auth/register", """
+                {
+                  "fullName": "Frontend Registration User",
+                  "email": "%s",
+                  "password": "password-123456"
+                }
+                """.formatted(email));
+
+        assertThat(response.statusCode()).isEqualTo(201);
+        assertThat(response.body()).contains("\"email\":\"" + email + "\"");
+        assertThat(response.body()).containsPattern("\\\"createdAt\\\":\\\"[^\\\"]+\\\"");
+        assertThat(response.headers().firstValue("Set-Cookie")).hasValueSatisfying(cookie ->
+                assertThat(cookie).contains("refresh_token=", "HttpOnly"));
+    }
+
+    @Test
     void protectedEndpoint_malformedUuid_badRequest() throws Exception {
         String token = tokenFor(savedUser(Role.USER, true));
 

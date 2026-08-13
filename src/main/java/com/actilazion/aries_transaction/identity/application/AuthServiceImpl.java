@@ -74,7 +74,7 @@ public class AuthServiceImpl implements AuthService {
                 .email(email)
                 .passwordHash(passwordEncoder.encode(request.password()))
                 .build();
-        userRepository.save(user);
+        userRepository.saveAndFlush(user);
         log.info("[AUTH] User registered id: {}", user.getId());
         identityAuditService.record(IdentityAuditEventType.REGISTERED, user.getId(), email, ipAddress, Map.of());
 

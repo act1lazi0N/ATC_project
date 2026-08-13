@@ -102,6 +102,39 @@ class SecurityFilterIntegrationTest {
     }
 
     @Test
+    void cors_preflightFromFrontend_isAllowedWithoutAuthentication() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/v1/auth/login"))
+                .header("Origin", "http://localhost:3000")
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "content-type, authorization")
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("Access-Control-Allow-Origin")).contains("http://localhost:3000");
+        assertThat(response.headers().firstValue("Access-Control-Allow-Credentials")).contains("true");
+    }
+
+    @Test
+    void cors_unauthenticatedLoginResponse_isReadableByFrontend() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/v1/auth/login"))
+                .header("Origin", "http://localhost:3000")
+                .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .POST(HttpRequest.BodyPublishers.ofString("""
+                        {"email":"missing-user@test.local","password":"wrong-password"}
+                        """))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.headers().firstValue("Access-Control-Allow-Origin")).contains("http://localhost:3000");
+        assertThat(response.headers().firstValue("Access-Control-Allow-Credentials")).contains("true");
+    }
+
+    @Test
     void login_badCredentials_unauthorized() throws Exception {
         User user = savedUser(Role.USER, true);
 

@@ -8,8 +8,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Getter
 @Setter
@@ -18,12 +18,16 @@ import java.util.stream.Collectors;
 public class RefreshCookiePolicy {
     private String allowedOrigins = "";
 
-    public void enforce(HttpServletRequest request) {
-        String origin = request.getHeader("Origin");
-        Set<String> allowed = Arrays.stream(allowedOrigins.split(","))
+    public List<String> allowedOriginList() {
+        return Arrays.stream(allowedOrigins.split(","))
                 .map(String::trim)
                 .filter(value -> !value.isBlank())
-                .collect(Collectors.toUnmodifiableSet());
+                .toList();
+    }
+
+    public void enforce(HttpServletRequest request) {
+        String origin = request.getHeader("Origin");
+        Set<String> allowed = Set.copyOf(allowedOriginList());
         if (origin == null || !allowed.contains(origin)) {
             throw new CsrfOriginException();
         }

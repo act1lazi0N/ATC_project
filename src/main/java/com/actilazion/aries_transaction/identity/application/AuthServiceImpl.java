@@ -18,6 +18,7 @@ import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import com.actilazion.aries_transaction.common.redis.SecurityKeyHasher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.core.AuthenticationException;
@@ -29,11 +30,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.SQLException;
 import java.security.SecureRandom;
 import java.time.OffsetDateTime;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.Map;
 
@@ -66,7 +69,7 @@ public class AuthServiceImpl implements AuthService {
         validatePasswordLength(request.password());
         if (userRepository.existsByEmail(email)) {
             identityAuditService.record(IdentityAuditEventType.REGISTRATION_REJECTED, null, email, ipAddress, Map.of());
-            throw new AppException("Registration request cannot be completed", HttpStatus.CONFLICT) {};
+            throw registrationConflict();
         }
 
         User user = User.builder()
@@ -74,7 +77,15 @@ public class AuthServiceImpl implements AuthService {
                 .email(email)
                 .passwordHash(passwordEncoder.encode(request.password()))
                 .build();
-        userRepository.saveAndFlush(user);
+        try {
+            userRepository.saveAndFlush(user);
+        } catch (DataIntegrityViolationException ex) {
+            if (!isDuplicateEmailViolation(ex)) {
+                throw ex;
+            }
+            identityAuditService.record(IdentityAuditEventType.REGISTRATION_REJECTED, null, email, ipAddress, Map.of());
+            throw registrationConflict();
+        }
         log.info("[AUTH] User registered id: {}", user.getId());
         identityAuditService.record(IdentityAuditEventType.REGISTERED, user.getId(), email, ipAddress, Map.of());
 
@@ -268,5 +279,24 @@ public class AuthServiceImpl implements AuthService {
 
     private String normalizeEmail(String email) {
         return email.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private AppException registrationConflict() {
+        return new AppException("Registration request cannot be completed", HttpStatus.CONFLICT) {};
+    }
+
+    private boolean isDuplicateEmailViolation(DataIntegrityViolationException exception) {
+        Throwable cause = exception;
+        while (cause != null) {
+            if (cause instanceof SQLException sqlException && "23505".equals(sqlException.getSQLState())) {
+                return true;
+            }
+            String message = cause.getMessage();
+            if (message != null && message.toLowerCase(Locale.ROOT).contains("uk_users_email")) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
     }
 }

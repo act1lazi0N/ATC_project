@@ -7,6 +7,8 @@ import org.springframework.stereotype.Component;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 
 @Component
@@ -21,7 +23,7 @@ public class SecurityKeyHasher {
             Mac mac = Mac.getInstance(HMAC_ALGORITHM);
             mac.init(new SecretKeySpec(properties.getKeyHashSecret().getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
             return HexFormat.of().formatHex(mac.doFinal(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception ex) {
+        } catch (NoSuchAlgorithmException | InvalidKeyException ex) {
             throw new IllegalStateException("Unable to hash Redis security key", ex);
         }
     }

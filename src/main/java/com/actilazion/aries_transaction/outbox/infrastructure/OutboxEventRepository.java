@@ -23,8 +23,6 @@ public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> 
             String eventType
     );
 
-    List<OutboxEvent> findAllByStatusOrderByCreatedAtAsc(OutboxEventStatus status);
-
     Optional<OutboxEvent> findByIdAndStatusAndClaimToken(
             UUID id,
             OutboxEventStatus status,

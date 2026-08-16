@@ -7,7 +7,6 @@ import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.application.AuthenticatedUserPrincipal;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
@@ -336,15 +335,17 @@ class SecurityFilterIntegrationTest {
     private String signedToken(User user, String issuer, String audience, String tokenType) {
         long nowMs = System.currentTimeMillis();
         return Jwts.builder()
-                .setSubject(user.getEmail())
-                .setIssuer(issuer)
-                .setAudience(audience)
-                .setIssuedAt(new Date(nowMs))
-                .setExpiration(new Date(nowMs + jwtConfig.getExpiration() * 1000))
+                .subject(user.getEmail())
+                .issuer(issuer)
+                .audience()
+                .add(audience)
+                .and()
+                .issuedAt(new Date(nowMs))
+                .expiration(new Date(nowMs + jwtConfig.getExpiration() * 1000))
                 .claim("typ", tokenType)
                 .signWith(
                         Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtConfig.getSecret())),
-                        SignatureAlgorithm.HS256
+                        Jwts.SIG.HS256
                 )
                 .compact();
     }

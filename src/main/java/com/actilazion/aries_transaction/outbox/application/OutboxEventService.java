@@ -64,14 +64,6 @@ public class OutboxEventService {
         outboxEventRepository.save(event);
     }
 
-    @Transactional(readOnly = true)
-    public List<OutboxEvent> findPendingEvents(int limit) {
-        return outboxEventRepository.findAllByStatusOrderByCreatedAtAsc(OutboxEventStatus.PENDING)
-                .stream()
-                .limit(limit)
-                .toList();
-    }
-
     @Transactional
     public List<OutboxEvent> claimPublishableEvents(int limit) {
         OffsetDateTime now = OffsetDateTime.now();

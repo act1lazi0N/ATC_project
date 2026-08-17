@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -81,6 +82,27 @@ class AccountServiceImplTest {
         )).isSameAs(violation);
 
         verify(accountRepository, times(1)).saveAndFlush(any(Account.class));
+    }
+
+    @Test
+    void getMyAccounts_queriesAccountsByAuthenticatedOwner() {
+        User owner = owner();
+        Account account = Account.builder()
+                .id(UUID.randomUUID())
+                .user(owner)
+                .accountNumber("123456789012")
+                .accountType(AccountType.PERSONAL)
+                .balance(new java.math.BigDecimal("1000000.00"))
+                .currency("VND")
+                .build();
+        when(userRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(owner));
+        when(accountRepository.findAllByUserId(owner.getId())).thenReturn(List.of(account));
+
+        var accounts = accountService.getMyAccounts(OWNER_EMAIL);
+
+        assertThat(accounts).hasSize(1);
+        assertThat(accounts.get(0).id()).isEqualTo(account.getId());
+        verify(accountRepository).findAllByUserId(owner.getId());
     }
 
     @Test

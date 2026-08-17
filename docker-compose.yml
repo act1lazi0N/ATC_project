@@ -37,6 +37,7 @@ services:
       - transfer_net
 
   app:
+    image: ${APP_IMAGE:-aries-transaction-project:local}
     build:
       context: .
       dockerfile: Dockerfile

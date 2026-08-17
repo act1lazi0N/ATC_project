@@ -192,6 +192,27 @@ To rebuild the application image after source changes:
 docker compose up -d --build
 ```
 
+### Pull a CI-built image from GHCR
+
+Every source change pushed to GitHub builds an image. Pushes also publish it to
+GitHub Container Registry (GHCR): the default branch receives `latest`, and
+every branch and commit receives immutable branch/SHA tags. Pulling a private
+package requires a GitHub personal access token with `read:packages`.
+
+On Windows PowerShell, update the running app to the latest default-branch image
+without recreating PostgreSQL or Redis:
+
+```powershell
+docker login ghcr.io -u act1lazi0N
+$env:APP_IMAGE = "ghcr.io/act1lazi0n/atc_project:latest"
+docker compose pull app
+docker compose up -d --no-deps --force-recreate app
+Invoke-WebRequest http://localhost:8080/actuator/health
+```
+
+For an exact immutable CI image, replace `latest` with a `sha-<commit>` tag
+shown by the GitHub Actions build.
+
 Follow app logs:
 
 ```bash

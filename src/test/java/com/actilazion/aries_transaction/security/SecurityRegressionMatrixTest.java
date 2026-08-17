@@ -11,7 +11,6 @@ import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
@@ -130,16 +129,18 @@ class SecurityRegressionMatrixTest {
 
     private String signed(User user, Date issuedAt, Date expiration, Date notBefore, SecretKey key) {
         var builder = Jwts.builder()
-                .setSubject(user.getId().toString())
-                .setIssuer(jwtConfig.getIssuer())
-                .setAudience(jwtConfig.getAudience())
-                .setId(UUID.randomUUID().toString())
-                .setIssuedAt(issuedAt)
-                .setExpiration(expiration)
+                .subject(user.getId().toString())
+                .issuer(jwtConfig.getIssuer())
+                .audience()
+                .add(jwtConfig.getAudience())
+                .and()
+                .id(UUID.randomUUID().toString())
+                .issuedAt(issuedAt)
+                .expiration(expiration)
                 .claim("typ", jwtConfig.getTokenType())
-                .signWith(key, SignatureAlgorithm.HS256);
+                .signWith(key, Jwts.SIG.HS256);
         if (notBefore != null) {
-            builder.setNotBefore(notBefore);
+            builder.notBefore(notBefore);
         }
         return builder.compact();
     }

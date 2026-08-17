@@ -61,6 +61,8 @@ services:
 
       # JWT
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_REFRESH_COOKIE_SECURE: ${JWT_REFRESH_COOKIE_SECURE:-false}
+      AUTH_REFRESH_ALLOWED_ORIGINS: ${AUTH_REFRESH_ALLOWED_ORIGINS:-http://localhost:3000}
 
       # OpenAPI docs are disabled by default outside dev
       SPRINGDOC_API_DOCS_ENABLED: ${SPRINGDOC_API_DOCS_ENABLED:-false}

@@ -2,10 +2,20 @@ name: CI
 
 on:
   pull_request:
+    paths:
+      - "src/**"
+      - "pom.xml"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/ci.yml"
   push:
-    branches:
-      - main
-      - develop
+    paths:
+      - "src/**"
+      - "pom.xml"
+      - "Dockerfile"
+      - ".dockerignore"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
 
 jobs:
   test:
@@ -28,3 +38,25 @@ jobs:
         env:
           CI: "true"
         run: bash ./mvnw -B test
+
+  docker-image:
+    name: Build Docker image
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build application image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: aries-transaction-project:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

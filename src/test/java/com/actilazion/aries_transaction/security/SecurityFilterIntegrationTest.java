@@ -7,7 +7,6 @@ import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.application.AuthenticatedUserPrincipal;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.Test;
@@ -23,7 +22,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.Date;
+import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -102,6 +103,39 @@ class SecurityFilterIntegrationTest {
     }
 
     @Test
+    void cors_preflightFromFrontend_isAllowedWithoutAuthentication() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/v1/auth/login"))
+                .header("Origin", "http://localhost:3000")
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "content-type, authorization")
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("Access-Control-Allow-Origin")).contains("http://localhost:3000");
+        assertThat(response.headers().firstValue("Access-Control-Allow-Credentials")).contains("true");
+    }
+
+    @Test
+    void cors_unauthenticatedLoginResponse_isReadableByFrontend() throws Exception {
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/v1/auth/login"))
+                .header("Origin", "http://localhost:3000")
+                .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .POST(HttpRequest.BodyPublishers.ofString("""
+                        {"email":"missing-user@test.local","password":"wrong-password"}
+                        """))
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.headers().firstValue("Access-Control-Allow-Origin")).contains("http://localhost:3000");
+        assertThat(response.headers().firstValue("Access-Control-Allow-Credentials")).contains("true");
+    }
+
+    @Test
     void login_badCredentials_unauthorized() throws Exception {
         User user = savedUser(Role.USER, true);
 
@@ -115,6 +149,25 @@ class SecurityFilterIntegrationTest {
         assertThat(response.statusCode()).isEqualTo(401);
         assertThat(response.body()).contains("\"status\":401");
         assertThat(response.body()).contains("\"message\":\"Unauthorized\"");
+    }
+
+    @Test
+    void register_returnsCompleteUserForFrontendSession() throws Exception {
+        String email = "register-response-" + UUID.randomUUID() + "@test.local";
+
+        HttpResponse<String> response = postWithoutAuthorization("/api/v1/auth/register", """
+                {
+                  "fullName": "Frontend Registration User",
+                  "email": "%s",
+                  "password": "password-123456"
+                }
+                """.formatted(email));
+
+        assertThat(response.statusCode()).isEqualTo(201);
+        assertThat(response.body()).contains("\"email\":\"" + email + "\"");
+        assertThat(response.body()).containsPattern("\\\"createdAt\\\":\\\"[^\\\"]+\\\"");
+        assertThat(response.headers().firstValue("Set-Cookie")).hasValueSatisfying(cookie ->
+                assertThat(cookie).contains("refresh_token=", "HttpOnly"));
     }
 
     @Test
@@ -238,6 +291,33 @@ class SecurityFilterIntegrationTest {
         assertThat(duplicate.body()).contains("Registration request cannot be completed");
     }
 
+    @Test
+    void concurrentDuplicateRegistration_returnsOneCreatedAndOneConflict() {
+        String email = "concurrent-registration-" + UUID.randomUUID() + "@test.local";
+        String body = """
+                {"fullName":"Concurrent Registration User","email":"%s","password":"password-123456"}
+                """.formatted(email);
+
+        HttpRequest first = HttpRequest.newBuilder(uri("/api/v1/auth/register"))
+                .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+        HttpRequest second = HttpRequest.newBuilder(uri("/api/v1/auth/register"))
+                .header("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build();
+
+        CompletableFuture<HttpResponse<String>> firstFuture =
+                httpClient.sendAsync(first, HttpResponse.BodyHandlers.ofString());
+        CompletableFuture<HttpResponse<String>> secondFuture =
+                httpClient.sendAsync(second, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> firstResponse = firstFuture.join();
+        HttpResponse<String> secondResponse = secondFuture.join();
+
+        assertThat(List.of(firstResponse.statusCode(), secondResponse.statusCode()))
+                .containsExactlyInAnyOrder(201, 409);
+    }
+
     private User savedUser(Role role, boolean active) {
         return userRepository.save(User.builder()
                 .fullName("Security Test User")
@@ -255,15 +335,17 @@ class SecurityFilterIntegrationTest {
     private String signedToken(User user, String issuer, String audience, String tokenType) {
         long nowMs = System.currentTimeMillis();
         return Jwts.builder()
-                .setSubject(user.getEmail())
-                .setIssuer(issuer)
-                .setAudience(audience)
-                .setIssuedAt(new Date(nowMs))
-                .setExpiration(new Date(nowMs + jwtConfig.getExpiration() * 1000))
+                .subject(user.getEmail())
+                .issuer(issuer)
+                .audience()
+                .add(audience)
+                .and()
+                .issuedAt(new Date(nowMs))
+                .expiration(new Date(nowMs + jwtConfig.getExpiration() * 1000))
                 .claim("typ", tokenType)
                 .signWith(
                         Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtConfig.getSecret())),
-                        SignatureAlgorithm.HS256
+                        Jwts.SIG.HS256
                 )
                 .compact();
     }

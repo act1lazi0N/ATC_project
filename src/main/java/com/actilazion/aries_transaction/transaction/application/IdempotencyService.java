@@ -4,21 +4,25 @@ import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecord;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecordStatus;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
 import com.actilazion.aries_transaction.transaction.domain.TransactionOperation;
+import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
+import com.actilazion.aries_transaction.transaction.domain.exception.DuplicateTransferException;
 import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
 import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
-import com.actilazion.aries_transaction.transaction.domain.exception.DuplicateTransferException;
 import com.actilazion.aries_transaction.transaction.infrastructure.IdempotencyRecordRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.OffsetDateTime;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,6 +34,7 @@ public class IdempotencyService {
     private static final String TRANSFER_OPERATION = TransactionOperation.TRANSFER.name();
     private static final String REVERSAL_OPERATION = TransactionOperation.REVERSAL.name();
     private static final String REFUND_OPERATION = TransactionOperation.REFUND.name();
+    private static final String IDEMPOTENCY_SCOPE_CONSTRAINT = "uk_idempotency_records_scope";
 
     private final IdempotencyRecordRepository idempotencyRecordRepository;
 
@@ -99,8 +104,22 @@ public class IdempotencyService {
         try {
             return idempotencyRecordRepository.saveAndFlush(record);
         } catch (DataIntegrityViolationException ex) {
-            throw new DuplicateTransferException(idempotencyKey);
+            if (isIdempotencyScopeCollision(ex)) {
+                throw new DuplicateTransferException(idempotencyKey);
+            }
+            throw ex;
         }
+    }
+
+    private boolean isIdempotencyScopeCollision(DataIntegrityViolationException exception) {
+        for (Throwable cause = exception; cause != null; cause = cause.getCause()) {
+            String message = cause.getMessage();
+            if (message != null
+                    && message.toLowerCase(Locale.ROOT).contains(IDEMPOTENCY_SCOPE_CONSTRAINT)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public void markCompleted(IdempotencyRecord record, Transaction transaction, TransactionResponse response) {
@@ -115,16 +134,29 @@ public class IdempotencyService {
         if (record.getStatus() != IdempotencyRecordStatus.COMPLETED || record.getResponsePayload() == null) {
             throw new DuplicateTransferException(idempotencyKey);
         }
-        Map<String, Object> p = record.getResponsePayload();
+        Map<String, Object> payload = record.getResponsePayload();
         return new TransactionResponse(
-                UUID.fromString((String) p.get("id")), UUID.fromString((String) p.get("fromAccountId")),
-                UUID.fromString((String) p.get("toAccountId")), new java.math.BigDecimal((String) p.get("amount")),
-                (String) p.get("currency"), com.actilazion.aries_transaction.transaction.domain.TransactionStatus.valueOf((String) p.get("status")),
-                (String) p.get("idempotencyKey"), (String) p.get("description"), (String) p.get("failureReason"),
-                p.get("originalTransactionId") == null ? null : UUID.fromString((String) p.get("originalTransactionId")),
-                p.get("refundedAmount") == null ? null : new java.math.BigDecimal((String) p.get("refundedAmount")),
-                p.get("createdAt") == null ? null : OffsetDateTime.parse((String) p.get("createdAt")),
-                p.get("completedAt") == null ? null : OffsetDateTime.parse((String) p.get("completedAt"))
+                UUID.fromString((String) payload.get("id")),
+                UUID.fromString((String) payload.get("fromAccountId")),
+                UUID.fromString((String) payload.get("toAccountId")),
+                new BigDecimal((String) payload.get("amount")),
+                (String) payload.get("currency"),
+                TransactionStatus.valueOf((String) payload.get("status")),
+                (String) payload.get("idempotencyKey"),
+                (String) payload.get("description"),
+                (String) payload.get("failureReason"),
+                payload.get("originalTransactionId") == null
+                        ? null
+                        : UUID.fromString((String) payload.get("originalTransactionId")),
+                payload.get("refundedAmount") == null
+                        ? null
+                        : new BigDecimal((String) payload.get("refundedAmount")),
+                payload.get("createdAt") == null
+                        ? null
+                        : OffsetDateTime.parse((String) payload.get("createdAt")),
+                payload.get("completedAt") == null
+                        ? null
+                        : OffsetDateTime.parse((String) payload.get("completedAt"))
         );
     }
 
@@ -174,11 +206,7 @@ public class IdempotencyService {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] bytes = digest.digest(canonical.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hash = new StringBuilder(bytes.length * 2);
-            for (byte b : bytes) {
-                hash.append(String.format("%02x", b));
-            }
-            return hash.toString();
+            return HexFormat.of().formatHex(bytes);
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 is not available", ex);
         }
@@ -195,8 +223,14 @@ public class IdempotencyService {
         payload.put("idempotencyKey", response.idempotencyKey());
         payload.put("description", response.description());
         payload.put("failureReason", response.failureReason());
-        payload.put("originalTransactionId", response.originalTransactionId() != null ? response.originalTransactionId().toString() : null);
-        payload.put("refundedAmount", response.refundedAmount() != null ? response.refundedAmount().toPlainString() : null);
+        payload.put(
+                "originalTransactionId",
+                response.originalTransactionId() != null ? response.originalTransactionId().toString() : null
+        );
+        payload.put(
+                "refundedAmount",
+                response.refundedAmount() != null ? response.refundedAmount().toPlainString() : null
+        );
         payload.put("createdAt", response.createdAt() != null ? response.createdAt().toString() : null);
         payload.put("completedAt", response.completedAt() != null ? response.completedAt().toString() : null);
         return payload;

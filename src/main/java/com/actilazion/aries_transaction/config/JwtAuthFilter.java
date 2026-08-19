@@ -29,6 +29,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,@NonNull HttpServletResponse response,@NonNull FilterChain filterChain) throws ServletException, IOException {
+        if ("POST".equalsIgnoreCase(request.getMethod())
+                && "/api/v1/auth/logout".equals(request.getRequestURI())) {
+            filterChain.doFilter(request, response);
+            return;
+        }
         Enumeration<String> authorizationHeaders = request.getHeaders("Authorization");
         if (authorizationHeaders != null && authorizationHeaders.hasMoreElements()) {
             final String authHeader = authorizationHeaders.nextElement();

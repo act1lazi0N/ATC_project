@@ -1,6 +1,7 @@
 package com.actilazion.aries_transaction.identity.infrastructure;
 
 import com.actilazion.aries_transaction.identity.domain.RefreshSession;
+import com.actilazion.aries_transaction.identity.domain.RefreshSessionRevocationReason;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -22,7 +23,10 @@ public interface RefreshSessionRepository extends JpaRepository<RefreshSession, 
     long countByUserId(UUID userId);
 
     @Modifying
-    @Query("update RefreshSession s set s.revokedAt = :revokedAt "
-            + "where s.user.id = :userId and s.revokedAt is null")
-    int revokeActiveByUserId(@Param("userId") UUID userId, @Param("revokedAt") OffsetDateTime revokedAt);
+    @Query("update RefreshSession s set s.revokedAt = :revokedAt, s.revokedReason = :reason "
+            + "where s.familyId = :familyId and s.revokedAt is null")
+    int revokeActiveByFamilyId(
+            @Param("familyId") UUID familyId,
+            @Param("revokedAt") OffsetDateTime revokedAt,
+            @Param("reason") RefreshSessionRevocationReason reason);
 }

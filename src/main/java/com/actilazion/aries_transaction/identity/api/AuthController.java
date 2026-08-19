@@ -32,6 +32,7 @@ import jakarta.servlet.http.HttpServletRequest;
 @Tag(name = "Auth", description = "Authentication endpoints")
 public class AuthController {
     private static final String REFRESH_COOKIE = "refresh_token";
+    private static final String NO_STORE = "no-store";
     private final AuthService authService;
     private final JwtConfig jwtConfig;
     private final AuthRateLimiter authRateLimiter;
@@ -74,11 +75,13 @@ public class AuthController {
     @PostMapping("/logout")
     @Operation(summary = "Revoke the current refresh session")
     public ResponseEntity<ApiResponse<Void>> logout(
-            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            HttpServletRequest httpRequest,
             @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken
     ) {
-        authService.logout(principal.getUserId(), refreshToken);
+        refreshCookiePolicy.enforce(httpRequest);
+        authService.logout(refreshToken);
         return ResponseEntity.ok()
+                .header("Cache-Control", NO_STORE)
                 .header("Set-Cookie", clearRefreshCookie().toString())
                 .body(ApiResponse.ok("Logged out", null));
     }
@@ -88,12 +91,15 @@ public class AuthController {
     public ResponseEntity<ApiResponse<UserResponse>> me(
             @AuthenticationPrincipal AuthenticatedUserPrincipal principal
     ) {
-        return ResponseEntity.ok(ApiResponse.ok("Current user", authService.me(principal.getUserId())));
+        return ResponseEntity.ok()
+                .header("Cache-Control", NO_STORE)
+                .body(ApiResponse.ok("Current user", authService.me(principal.getUserId())));
     }
 
     private ResponseEntity<ApiResponse<AuthResponse>> withRefreshCookie(
             HttpStatus status, String message, AuthResponse response) {
         return ResponseEntity.status(status)
+                .header("Cache-Control", NO_STORE)
                 .header("Set-Cookie", refreshCookie(response.refreshToken()).toString())
                 .body(ApiResponse.ok(message, response));
     }

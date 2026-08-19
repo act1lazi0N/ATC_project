@@ -2,6 +2,8 @@ package com.actilazion.aries_transaction.identity.domain;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -51,6 +53,13 @@ public class RefreshSession {
 
     @Column(name = "revoked_at")
     private OffsetDateTime revokedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "revoked_reason", length = 32)
+    private RefreshSessionRevocationReason revokedReason;
+
+    @Column(name = "family_id", nullable = false, updatable = false)
+    private UUID familyId;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "replaced_by_session_id")

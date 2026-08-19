@@ -8,6 +8,7 @@ import com.actilazion.aries_transaction.config.JwtConfig;
 import com.actilazion.aries_transaction.config.JwtService;
 import com.actilazion.aries_transaction.config.LoginProtectionConfig;
 import com.actilazion.aries_transaction.identity.domain.RefreshSession;
+import com.actilazion.aries_transaction.identity.domain.RefreshSessionRevocationReason;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.dto.AuthResponse;
 import com.actilazion.aries_transaction.identity.dto.LoginRequest;
@@ -158,20 +159,32 @@ public class AuthServiceImpl implements AuthService {
         User user = current.getUser();
 
         if (current.getRevokedAt() != null) {
-            refreshSessionRepository.revokeActiveByUserId(user.getId(), now);
-            identityAuditService.record(IdentityAuditEventType.REFRESH_REUSE_DETECTED, user.getId(), null, ipAddress, Map.of());
+            if (current.getRevokedReason() == RefreshSessionRevocationReason.ROTATED
+                    || current.getRevokedReason() == null) {
+                refreshSessionRepository.revokeActiveByFamilyId(
+                        current.getFamilyId(), now, RefreshSessionRevocationReason.SECURITY_REUSE);
+                identityAuditService.record(IdentityAuditEventType.REFRESH_REUSE_DETECTED,
+                        user.getId(), null, ipAddress, Map.of());
+            } else {
+                identityAuditService.record(IdentityAuditEventType.REFRESH_REJECTED,
+                        user.getId(), null, ipAddress, Map.of());
+            }
             throw unauthorized();
         }
         if (current.getExpiresAt().isBefore(now) || !Boolean.TRUE.equals(user.getIsActive())) {
             current.setRevokedAt(now);
+            current.setRevokedReason(Boolean.TRUE.equals(user.getIsActive())
+                    ? RefreshSessionRevocationReason.EXPIRED
+                    : RefreshSessionRevocationReason.ADMIN_REVOKED);
             identityAuditService.record(IdentityAuditEventType.REFRESH_REJECTED, user.getId(), null, ipAddress, Map.of());
             throw unauthorized();
         }
 
         current.setLastUsedAt(now);
         current.setRevokedAt(now);
+        current.setRevokedReason(RefreshSessionRevocationReason.ROTATED);
         String rotatedToken = newRefreshToken();
-        RefreshSession replacement = newSession(user, rotatedToken, now);
+        RefreshSession replacement = newSession(user, rotatedToken, now, current.getFamilyId());
         refreshSessionRepository.save(replacement);
         current.setReplacedBy(replacement);
         refreshSessionRepository.save(current);
@@ -184,14 +197,17 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public void logout(UUID userId, String refreshToken) {
-        if (refreshToken == null || refreshToken.isBlank()) {
-            return;
+    public void logout(String refreshToken) {
+        OffsetDateTime now = OffsetDateTime.now();
+        RefreshSession session = refreshToken == null || refreshToken.isBlank()
+                ? null
+                : refreshSessionRepository.findByTokenHashForUpdate(hash(refreshToken)).orElse(null);
+        if (session != null) {
+            refreshSessionRepository.revokeActiveByFamilyId(
+                    session.getFamilyId(), now, RefreshSessionRevocationReason.LOGOUT);
         }
-        refreshSessionRepository.findByTokenHashForUpdate(hash(refreshToken))
-                .filter(session -> session.getUser().getId().equals(userId))
-                .ifPresent(session -> session.setRevokedAt(OffsetDateTime.now()));
-        identityAuditService.record(IdentityAuditEventType.LOGOUT, userId, null, null, Map.of());
+        identityAuditService.record(IdentityAuditEventType.LOGOUT,
+                session == null ? null : session.getUser().getId(), null, null, Map.of());
     }
 
     @Override
@@ -204,16 +220,17 @@ public class AuthServiceImpl implements AuthService {
 
     private AuthResponse issueSession(User user) {
         String refreshToken = newRefreshToken();
-        refreshSessionRepository.save(newSession(user, refreshToken, OffsetDateTime.now()));
+        refreshSessionRepository.save(newSession(user, refreshToken, OffsetDateTime.now(), UUID.randomUUID()));
         return AuthResponse.withRefresh(
                 jwtService.generateToken(AuthenticatedUserPrincipal.from(user)),
                 jwtConfig.getExpiration(), UserResponse.from(user), refreshToken);
     }
 
-    private RefreshSession newSession(User user, String refreshToken, OffsetDateTime now) {
+    private RefreshSession newSession(User user, String refreshToken, OffsetDateTime now, UUID familyId) {
         return RefreshSession.builder()
                 .user(user)
                 .refreshTokenHash(hash(refreshToken))
+                .familyId(familyId)
                 .expiresAt(now.plusSeconds(jwtConfig.getRefreshExpiration()))
                 .build();
     }

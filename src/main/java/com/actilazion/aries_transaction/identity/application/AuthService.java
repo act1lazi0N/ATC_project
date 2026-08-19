@@ -26,7 +26,7 @@ public interface AuthService {
         return refresh(refreshToken);
     }
 
-    void logout(UUID userId, String refreshToken);
+    void logout(String refreshToken);
 
     UserResponse me(UUID userId);
 }

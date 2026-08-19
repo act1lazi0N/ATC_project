@@ -19,11 +19,11 @@ import java.util.Map;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+    private static final String NO_STORE = "no-store";
 
     @ExceptionHandler(AppException.class)
     public ResponseEntity<ErrorResponse> handleAppException(AppException ex) {
-        return ResponseEntity
-                .status(ex.getHttpStatus())
+        return noStore(ex.getHttpStatus())
                 .body(new ErrorResponse(
                         ex.getHttpStatus().value(),
                         ex.getMessage(),
@@ -40,8 +40,7 @@ public class GlobalExceptionHandler {
             fieldErrors.put(error.getField(), error.getDefaultMessage());
         }
 
-        return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
+        return noStore(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse(
                         HttpStatus.BAD_REQUEST.value(),
                         "Validation failed",
@@ -51,8 +50,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RateLimitExceededException.class)
     public ResponseEntity<ErrorResponse> handleRateLimit(RateLimitExceededException ex) {
-        return ResponseEntity
-                .status(ex.getHttpStatus())
+        return noStore(ex.getHttpStatus())
                 .header("Retry-After", Long.toString(ex.getRetryAfterSeconds()))
                 .body(new ErrorResponse(
                         ex.getHttpStatus().value(),
@@ -63,8 +61,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AuthenticationException.class)
     public ResponseEntity<ErrorResponse> handleAuthentication(AuthenticationException ex) {
-        return ResponseEntity
-                .status(HttpStatus.UNAUTHORIZED)
+        return noStore(HttpStatus.UNAUTHORIZED)
                 .body(new ErrorResponse(
                         HttpStatus.UNAUTHORIZED.value(),
                         "Unauthorized",
@@ -74,8 +71,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
-        return ResponseEntity
-                .status(HttpStatus.FORBIDDEN)
+        return noStore(HttpStatus.FORBIDDEN)
                 .body(new ErrorResponse(
                         HttpStatus.FORBIDDEN.value(),
                         "Access denied",
@@ -89,8 +85,7 @@ public class GlobalExceptionHandler {
             HttpMessageNotReadableException.class
     })
     public ResponseEntity<ErrorResponse> handleBadRequest(Exception ex) {
-        return ResponseEntity
-                .status(HttpStatus.BAD_REQUEST)
+        return noStore(HttpStatus.BAD_REQUEST)
                 .body(new ErrorResponse(
                         HttpStatus.BAD_REQUEST.value(),
                         badRequestMessage(ex),
@@ -101,8 +96,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleUnexpected(Exception ex) {
         log.error("Unexpected error: ", ex);
-        return ResponseEntity
-                .status(HttpStatus.INTERNAL_SERVER_ERROR)
+        return noStore(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse(
                         HttpStatus.INTERNAL_SERVER_ERROR.value(),
                         "An unexpected error occurred.",
@@ -118,6 +112,10 @@ public class GlobalExceptionHandler {
             return "Malformed JSON request";
         }
         return ex.getMessage() != null ? ex.getMessage() : "Bad request";
+    }
+
+    private ResponseEntity.BodyBuilder noStore(HttpStatus status) {
+        return ResponseEntity.status(status).header("Cache-Control", NO_STORE);
     }
 
     public record ErrorResponse(

@@ -2,9 +2,12 @@ package com.actilazion.aries_transaction.security;
 
 import com.actilazion.aries_transaction.config.JwtService;
 import com.actilazion.aries_transaction.config.JwtConfig;
+import com.actilazion.aries_transaction.identity.application.AuthService;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.application.AuthenticatedUserPrincipal;
+import com.actilazion.aries_transaction.identity.dto.AuthResponse;
+import com.actilazion.aries_transaction.identity.dto.RegisterRequest;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
@@ -47,6 +50,9 @@ class SecurityFilterIntegrationTest {
 
     @Autowired
     JwtConfig jwtConfig;
+
+    @Autowired
+    AuthService authService;
 
     @Test
     void settlementCreate_userRole_forbidden() throws Exception {
@@ -277,6 +283,50 @@ class SecurityFilterIntegrationTest {
     }
 
     @Test
+    void logout_withoutAuthorization_clearsCookieAndReturnsSuccess() throws Exception {
+        AuthResponse session = authService.register(new RegisterRequest(
+                "Logout HTTP User", "logout-http-" + UUID.randomUUID() + "@test.local", "password-123456"));
+
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/v1/auth/logout"))
+                .header("Origin", "http://localhost:3000")
+                .header("Cookie", "refresh_token=" + session.refreshToken())
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("Cache-Control")).contains("no-store");
+        assertThat(response.headers().firstValue("Set-Cookie")).hasValueSatisfying(cookie ->
+                assertThat(cookie).contains("refresh_token=", "Max-Age=0", "HttpOnly"));
+
+        HttpResponse<String> repeated = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        assertThat(repeated.statusCode()).isEqualTo(200);
+        assertThat(repeated.headers().firstValue("Set-Cookie")).hasValueSatisfying(cookie ->
+                assertThat(cookie).contains("Max-Age=0"));
+    }
+
+    @Test
+    void logout_withExpiredAuthorization_stillRevokesCookieSession() throws Exception {
+        User user = savedUser(Role.USER, true);
+        AuthResponse session = authService.register(new RegisterRequest(
+                "Logout Expired User", "logout-expired-" + UUID.randomUUID() + "@test.local", "password-123456"));
+
+        HttpRequest request = HttpRequest.newBuilder(uri("/api/v1/auth/logout"))
+                .header("Origin", "http://localhost:3000")
+                .header("Authorization", bearer(expiredToken(user)))
+                .header("Cookie", "refresh_token=" + session.refreshToken())
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build();
+
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(200);
+        assertThat(response.headers().firstValue("Set-Cookie")).hasValueSatisfying(cookie ->
+                assertThat(cookie).contains("Max-Age=0"));
+    }
+
+    @Test
     void duplicateRegistration_doesNotExposeEmailExistence() throws Exception {
         String email = "duplicate-" + UUID.randomUUID() + "@test.local";
         String body = """
@@ -343,6 +393,25 @@ class SecurityFilterIntegrationTest {
                 .issuedAt(new Date(nowMs))
                 .expiration(new Date(nowMs + jwtConfig.getExpiration() * 1000))
                 .claim("typ", tokenType)
+                .signWith(
+                        Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtConfig.getSecret())),
+                        Jwts.SIG.HS256
+                )
+                .compact();
+    }
+
+    private String expiredToken(User user) {
+        long nowMs = System.currentTimeMillis();
+        return Jwts.builder()
+                .subject(user.getId().toString())
+                .issuer(jwtConfig.getIssuer())
+                .audience()
+                .add(jwtConfig.getAudience())
+                .and()
+                .issuedAt(new Date(nowMs - 10_000))
+                .expiration(new Date(nowMs - 5_000))
+                .claim("typ", jwtConfig.getTokenType())
+                .id(UUID.randomUUID().toString())
                 .signWith(
                         Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtConfig.getSecret())),
                         Jwts.SIG.HS256

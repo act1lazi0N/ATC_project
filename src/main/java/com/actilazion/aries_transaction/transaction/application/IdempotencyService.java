@@ -50,12 +50,9 @@ public class IdempotencyService {
         return findByScope(request.idempotencyKey(), REFUND_OPERATION, initiatorEmail);
     }
 
-    private Optional<IdempotencyRecord> findByScope(String idempotencyKey, String operation, String initiatorEmail) {
+    public Optional<IdempotencyRecord> findByScope(String idempotencyKey, String operation, String initiatorEmail) {
         return idempotencyRecordRepository.findByIdempotencyKeyAndOperationAndInitiatorEmail(
-                idempotencyKey,
-                operation,
-                initiatorEmail
-        );
+                idempotencyKey, operation, initiatorEmail);
     }
 
     public IdempotencyRecord createProcessingRecord(TransferRequest request, String initiatorEmail) {
@@ -179,7 +176,8 @@ public class IdempotencyService {
                 request.toAccountId(),
                 request.amount().stripTrailingZeros().toPlainString(),
                 request.currency() != null ? request.currency() : "",
-                request.description() != null ? request.description() : ""
+                request.description() != null ? request.description() : "",
+                request.previewId() != null ? request.previewId().toString() : ""
         );
     }
 

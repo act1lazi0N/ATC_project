@@ -11,6 +11,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import jakarta.validation.Valid;
+import com.actilazion.aries_transaction.account.dto.CreateAccountRequest;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -23,6 +27,16 @@ import java.util.List;
 @SecurityRequirement(name = "bearerAuth")
 public class AccountController {
     private final AccountService accountService;
+
+    @PostMapping
+    @Operation(summary = "Create an authenticated user's financial account")
+    public ResponseEntity<ApiResponse<AccountResponse>> create(
+            @Valid @RequestBody CreateAccountRequest request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok("Account created successfully",
+                accountService.create(request, userDetails.getUsername())));
+    }
 
     @GetMapping
     @Operation(summary = "List the authenticated user's accounts")

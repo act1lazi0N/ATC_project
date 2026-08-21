@@ -3,6 +3,10 @@ package com.actilazion.aries_transaction.transaction.api;
 import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
 import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
+import com.actilazion.aries_transaction.transaction.dto.TransferPreviewRequest;
+import com.actilazion.aries_transaction.transaction.dto.TransferPreviewResponse;
+import com.actilazion.aries_transaction.transaction.dto.TransferExecuteRequest;
+import com.actilazion.aries_transaction.transaction.application.TransferPreviewService;
 import com.actilazion.aries_transaction.common.dto.ApiResponse;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import com.actilazion.aries_transaction.transaction.application.TransferService;
@@ -31,8 +35,39 @@ import java.util.UUID;
 public class TransferController {
     private final TransferService transferService;
     private final DuplicateSuppressionService duplicateSuppression;
+    private final TransferPreviewService transferPreviewService;
+
+    @PostMapping("/preview")
+    @Operation(summary = "Create a transfer preview")
+    public ResponseEntity<ApiResponse<TransferPreviewResponse>> preview(
+            @Valid @RequestBody TransferPreviewRequest request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok("Transfer preview created",
+                transferPreviewService.create(request, userDetails.getUsername())));
+    }
 
     @PostMapping
+    @Operation(summary = "Execute a previously previewed transfer")
+    public ResponseEntity<ApiResponse<TransactionResponse>> execute(
+            @Valid @RequestBody TransferExecuteRequest request,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        if (request.previewId() == null) {
+            if (request.fromAccountId() == null || request.toAccountId() == null || request.amount() == null) {
+                throw new IllegalArgumentException("previewId is required");
+            }
+            TransferRequest compatibility = new TransferRequest(
+                    request.fromAccountId(), request.toAccountId(), request.amount(),
+                    request.idempotencyKey(), request.currency(), request.description());
+            return ResponseEntity.ok(ApiResponse.ok("Transfer completed successfully",
+                    transferService.transfer(compatibility, userDetails.getUsername())));
+        }
+        return ResponseEntity.ok(ApiResponse.ok("Transfer completed successfully",
+                transferService.execute(request, userDetails.getUsername())));
+    }
+
+    // Retained as a direct Java entry point for existing application-service callers; it is not mapped publicly.
     @Operation(summary = "Initiate a transfer between two accounts")
     public ResponseEntity<ApiResponse<TransactionResponse>> transfer(
             @Valid @RequestBody TransferRequest request,

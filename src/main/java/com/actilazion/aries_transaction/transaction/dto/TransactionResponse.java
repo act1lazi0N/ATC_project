@@ -7,19 +7,21 @@ import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.fasterxml.jackson.databind.ser.std.ToStringSerializer;
 
 public record TransactionResponse(
         UUID id,
         UUID fromAccountId,
         UUID toAccountId,
-        BigDecimal amount,
+        @JsonSerialize(using = ToStringSerializer.class) BigDecimal amount,
         String currency,
         TransactionStatus status,
         String idempotencyKey,
         String description,
         String failureReason,
         UUID originalTransactionId,
-        BigDecimal refundedAmount,
+        @JsonSerialize(using = ToStringSerializer.class) BigDecimal refundedAmount,
         OffsetDateTime createdAt,
         OffsetDateTime completedAt
 ) {

@@ -8,7 +8,11 @@ import com.actilazion.aries_transaction.account.infrastructure.AccountRepository
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
-import lombok.RequiredArgsConstructor;
+import com.actilazion.aries_transaction.transaction.domain.AccountCreationRequestRecord;
+import com.actilazion.aries_transaction.transaction.infrastructure.AccountCreationRequestRepository;
+import com.actilazion.aries_transaction.audit.domain.AuditEventType;
+import com.actilazion.aries_transaction.audit.domain.AuditLog;
+import com.actilazion.aries_transaction.audit.infrastructure.AuditLogRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -19,30 +23,78 @@ import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class AccountCreationAttemptService implements AccountCreationAttempt {
     private static final long ACCOUNT_NUMBER_BOUND = 1_000_000_000_000L;
 
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
+    private final AccountCreationRequestRepository requestRepository;
+    private final AuditLogRepository auditLogRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public AccountCreationAttemptService(AccountRepository accountRepository,
+                                         UserRepository userRepository,
+                                         AccountCreationRequestRepository requestRepository,
+                                         AuditLogRepository auditLogRepository) {
+        this.accountRepository = accountRepository;
+        this.userRepository = userRepository;
+        this.requestRepository = requestRepository;
+        this.auditLogRepository = auditLogRepository;
+    }
+
+    public AccountCreationAttemptService(AccountRepository accountRepository, UserRepository userRepository) {
+        this(accountRepository, userRepository, null, null);
+    }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @Override
     public AccountResponse create(CreateAccountRequest request, String ownerEmail) {
-        User owner = userRepository.findByEmail(ownerEmail)
-                .orElseThrow(() -> new ResourceNotFoundException("User", ownerEmail));
+        User owner = userRepository.findByEmailWithLock(ownerEmail)
+                .orElseGet(() -> userRepository.findByEmail(ownerEmail)
+                        .orElseThrow(() -> new ResourceNotFoundException("User", ownerEmail)));
+        if (request.idempotencyKey() != null && requestRepository != null) {
+            var existing = requestRepository.findByUserIdAndIdempotencyKey(owner.getId(), request.idempotencyKey());
+            if (existing.isPresent()) {
+                if (!existing.get().getRequestHash().equals(requestHash(request))) {
+                    throw new IllegalArgumentException("Idempotency key was already used for a different account request");
+                }
+                return AccountResponse.from(existing.get().getAccount());
+            }
+        }
+        if (accountRepository.countByUserIdAndStatus(owner.getId(), AccountStatus.ACTIVE) >= 5) {
+            throw new IllegalStateException("Maximum of 5 active accounts is allowed");
+        }
         Account account = Account.builder()
                 .user(owner)
                 .accountNumber(generateAccountNumber())
                 .accountType(request.accountType())
                 .balance(BigDecimal.ZERO)
                 .currency(request.currency())
+                .description(request.description())
                 .status(AccountStatus.ACTIVE)
                 .build();
 
         Account saved = accountRepository.saveAndFlush(account);
+        if (request.idempotencyKey() != null && requestRepository != null) {
+            requestRepository.saveAndFlush(AccountCreationRequestRecord.builder()
+                    .user(owner)
+                    .idempotencyKey(request.idempotencyKey())
+                    .requestHash(requestHash(request))
+                    .account(saved)
+                    .build());
+        }
+        if (auditLogRepository != null) auditLogRepository.save(AuditLog.builder()
+                .accountId(saved.getId())
+                .eventType(AuditEventType.ACCOUNT_CREATED)
+                .actorId(ownerEmail)
+                .payload(java.util.Map.of("accountId", saved.getId().toString(), "currency", saved.getCurrency()))
+                .build());
         log.info("[ACCOUNT] Created accountId={} owner={}", saved.getId(), ownerEmail);
         return AccountResponse.from(saved);
+    }
+
+    private String requestHash(CreateAccountRequest request) {
+        return Integer.toHexString(java.util.Objects.hash(request.accountType(), request.currency(), request.description()));
     }
 
     private String generateAccountNumber() {

@@ -37,6 +37,9 @@ public class AccountServiceImpl implements AccountService {
     @Override
     public AccountResponse create(CreateAccountRequest request, String ownerEmail) {
         validatePublicAccountType(request.accountType());
+        if (!"VND".equals(request.currency())) {
+            throw new IllegalArgumentException("Unsupported currency");
+        }
         for (int attempt = 1; attempt <= ACCOUNT_NUMBER_MAX_ATTEMPTS; attempt++) {
             try {
                 return accountCreationAttempt.create(request, ownerEmail);

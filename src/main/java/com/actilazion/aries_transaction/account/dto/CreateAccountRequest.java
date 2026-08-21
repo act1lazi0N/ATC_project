@@ -15,6 +15,13 @@ public record CreateAccountRequest(
         String currency,
 
         @Size(max = 255)
-        String description
+        String description,
+
+        @jakarta.validation.constraints.NotBlank(message = "idempotencyKey is required")
+        @jakarta.validation.constraints.Size(min = 16, max = 64)
+        String idempotencyKey
 ) {
+    public CreateAccountRequest(AccountType accountType, String currency, String description) {
+        this(accountType, currency, description, null);
+    }
 }

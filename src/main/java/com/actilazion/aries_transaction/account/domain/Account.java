@@ -44,6 +44,9 @@ public class Account {
     @Builder.Default
     private String currency = "VND";
 
+    @Column(length = 255)
+    private String description;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     @Builder.Default

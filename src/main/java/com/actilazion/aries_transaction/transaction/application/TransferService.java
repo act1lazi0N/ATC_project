@@ -8,9 +8,12 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import java.util.UUID;
+import com.actilazion.aries_transaction.transaction.dto.TransferExecuteRequest;
 
 public interface TransferService {
     TransactionResponse transfer(TransferRequest request, String initiatorEmail);
+
+    TransactionResponse execute(TransferExecuteRequest request, String initiatorEmail);
 
     TransactionResponse reverse(UUID originalTransactionId, ReversalRequest request, String initiatorEmail);
 

@@ -2,6 +2,7 @@ package com.actilazion.aries_transaction.audit.application;
 
 import com.actilazion.aries_transaction.audit.domain.AuditLog;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
+import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.audit.domain.AuditEventType;
 import com.actilazion.aries_transaction.audit.infrastructure.AuditLogRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,6 +28,22 @@ public class AuditLogService {
                 .build();
         auditLogRepository.save(auditLog);
         log.info("[AUDIT] txId={} event={} actor={}", tx.getId(), eventType, actorId);
+    }
+
+    public void log(Account account, AuditEventType eventType, String actorId) {
+        AuditLog auditLog = AuditLog.builder()
+                .accountId(account.getId())
+                .eventType(eventType)
+                .actorId(actorId)
+                .payload(Map.of(
+                        "accountId", account.getId().toString(),
+                        "accountNumber", account.getAccountNumber(),
+                        "accountType", account.getAccountType().name(),
+                        "currency", account.getCurrency(),
+                        "status", account.getStatus().name()))
+                .build();
+        auditLogRepository.save(auditLog);
+        log.info("[AUDIT] accountId={} event={} actor={}", account.getId(), eventType, actorId);
     }
 
     private Map<String, Object> buildPayload(Transaction tx) {

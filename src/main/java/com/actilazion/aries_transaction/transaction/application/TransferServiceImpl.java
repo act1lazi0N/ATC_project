@@ -14,6 +14,7 @@ import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecord;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecordStatus;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
+import com.actilazion.aries_transaction.transaction.domain.TransferPreview;
 import com.actilazion.aries_transaction.transaction.domain.TransactionOperation;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStateGuard;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
@@ -29,6 +30,8 @@ import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
 import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
+import com.actilazion.aries_transaction.transaction.dto.TransferExecuteRequest;
+import com.actilazion.aries_transaction.transaction.infrastructure.TransferPreviewRepository;
 import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,6 +56,35 @@ public class TransferServiceImpl implements TransferService {
     private final IdempotencyService idempotencyService;
     private final OutboxEventService outboxEventService;
     private final LedgerService ledgerService;
+    private final TransferPreviewRepository transferPreviewRepository;
+
+    @Override
+    @Transactional
+    public TransactionResponse execute(TransferExecuteRequest request, String initiatorEmail) {
+        User initiator = lockInitiator(initiatorEmail);
+        TransferPreview preview = transferPreviewRepository.findByIdWithLock(request.previewId())
+                .orElseThrow(() -> new ResourceNotFoundException("Transfer preview", request.previewId()));
+        TransferRequest transferRequest = new TransferRequest(
+                preview.getSourceAccount().getId().toString(),
+                preview.getDestinationAccount().getId().toString(),
+                preview.getAmount(), request.idempotencyKey(), preview.getCurrency(), preview.getDescription(), preview.getId());
+        var existing = idempotencyService.findTransferRecord(transferRequest, initiatorEmail);
+        if (existing.isPresent()) {
+            if (!idempotencyService.matchesRequest(existing.get(), transferRequest)) {
+                throw new IdempotencyConflictException(request.idempotencyKey());
+            }
+            return idempotencyService.responseFromPayload(existing.get(), request.idempotencyKey());
+        }
+        if (!preview.getInitiator().getId().equals(initiator.getId())
+                || preview.getConsumedAt() != null
+                || preview.getExpiresAt().isBefore(OffsetDateTime.now())) {
+            throw new IllegalArgumentException("Transfer preview is expired, consumed, or not owned by caller");
+        }
+        TransactionResponse response = transfer(transferRequest, initiatorEmail);
+        preview.setConsumedAt(OffsetDateTime.now());
+        transferPreviewRepository.save(preview);
+        return response;
+    }
 
     @Override
     @Transactional

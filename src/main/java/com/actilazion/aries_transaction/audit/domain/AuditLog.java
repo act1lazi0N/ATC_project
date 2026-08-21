@@ -24,8 +24,11 @@ public class AuditLog {
     @Column(updatable = false, nullable = false)
     private UUID id;
 
-    @Column(name = "transaction_id", nullable = false)
+    @Column(name = "transaction_id")
     private UUID transactionId;
+
+    @Column(name = "account_id")
+    private UUID accountId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "event_type", nullable = false, length = 50)

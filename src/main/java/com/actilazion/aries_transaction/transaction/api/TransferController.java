@@ -2,15 +2,16 @@ package com.actilazion.aries_transaction.transaction.api;
 
 import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
 import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
-import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransferPreviewRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransferPreviewResponse;
 import com.actilazion.aries_transaction.transaction.dto.TransferExecuteRequest;
 import com.actilazion.aries_transaction.transaction.application.TransferPreviewService;
+import com.actilazion.aries_transaction.transaction.application.TransferPreviewRequestProtection;
 import com.actilazion.aries_transaction.common.dto.ApiResponse;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import com.actilazion.aries_transaction.transaction.application.TransferService;
 import com.actilazion.aries_transaction.common.redis.DuplicateSuppressionService;
+import com.actilazion.aries_transaction.identity.application.AuthenticatedUserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,6 +25,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.UUID;
 
@@ -36,15 +38,18 @@ public class TransferController {
     private final TransferService transferService;
     private final DuplicateSuppressionService duplicateSuppression;
     private final TransferPreviewService transferPreviewService;
+    private final TransferPreviewRequestProtection previewRequestProtection;
 
     @PostMapping("/preview")
     @Operation(summary = "Create a transfer preview")
     public ResponseEntity<ApiResponse<TransferPreviewResponse>> preview(
             @Valid @RequestBody TransferPreviewRequest request,
-            @AuthenticationPrincipal UserDetails userDetails
+            @AuthenticationPrincipal AuthenticatedUserPrincipal principal,
+            HttpServletRequest httpRequest
     ) {
-        return ResponseEntity.ok(ApiResponse.ok("Transfer preview created",
-                transferPreviewService.create(request, userDetails.getUsername())));
+        return previewRequestProtection.execute(httpRequest, principal.getUserId(), () ->
+                ResponseEntity.ok(ApiResponse.ok("Transfer preview created",
+                        transferPreviewService.create(request, principal.getUsername()))));
     }
 
     @PostMapping
@@ -53,28 +58,13 @@ public class TransferController {
             @Valid @RequestBody TransferExecuteRequest request,
             @AuthenticationPrincipal UserDetails userDetails
     ) {
-        if (request.previewId() == null) {
-            if (request.fromAccountId() == null || request.toAccountId() == null || request.amount() == null) {
-                throw new IllegalArgumentException("previewId is required");
-            }
-            TransferRequest compatibility = new TransferRequest(
-                    request.fromAccountId(), request.toAccountId(), request.amount(),
-                    request.idempotencyKey(), request.currency(), request.description());
-            return ResponseEntity.ok(ApiResponse.ok("Transfer completed successfully",
-                    transferService.transfer(compatibility, userDetails.getUsername())));
-        }
-        return ResponseEntity.ok(ApiResponse.ok("Transfer completed successfully",
-                transferService.execute(request, userDetails.getUsername())));
-    }
-
-    // Retained as a direct Java entry point for existing application-service callers; it is not mapped publicly.
-    @Operation(summary = "Initiate a transfer between two accounts")
-    public ResponseEntity<ApiResponse<TransactionResponse>> transfer(
-            @Valid @RequestBody TransferRequest request,
-            @AuthenticationPrincipal UserDetails userDetails
-    ) {
-        TransactionResponse response = execute("transfer", userDetails.getUsername(), request.idempotencyKey(), request.toString(),
-                () -> transferService.transfer(request, userDetails.getUsername()));
+        TransactionResponse response = execute(
+                "transfer",
+                userDetails.getUsername(),
+                request.idempotencyKey(),
+                request.previewId().toString(),
+                () -> transferService.execute(request, userDetails.getUsername())
+        );
         return ResponseEntity.ok(ApiResponse.ok("Transfer completed successfully", response));
     }
 

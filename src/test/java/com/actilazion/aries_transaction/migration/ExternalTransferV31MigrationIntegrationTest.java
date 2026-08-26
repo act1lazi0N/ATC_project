@@ -87,8 +87,8 @@ class ExternalTransferV31MigrationIntegrationTest {
                         (user_id, idempotency_key, request_hash, account_id)
                     VALUES (?::uuid, 'migration-account-key', 'legacy32', ?::uuid)
                     """, userId, sourceId);
-            execute(connection, previewInsertSql(), userId, sourceId, destinationId, "10");
-            execute(connection, previewInsertSql(), userId, sourceId, destinationId, "1000");
+            execute(connection, v30PreviewInsertSql(), userId, sourceId, destinationId, "10");
+            execute(connection, v30PreviewInsertSql(), userId, sourceId, destinationId, "1000");
         }
     }
 
@@ -96,7 +96,7 @@ class ExternalTransferV31MigrationIntegrationTest {
         String userId = text(connection, "SELECT id::text FROM users WHERE email = 'external-v31@test.local'");
         String sourceId = text(connection, "SELECT id::text FROM accounts WHERE account_number = '810000000001'");
         String destinationId = text(connection, "SELECT id::text FROM accounts WHERE account_number = '810000000002'");
-        execute(connection, previewInsertSql(), userId, sourceId, destinationId, "999");
+        execute(connection, latestPreviewInsertSql(), userId, sourceId, destinationId, "999");
     }
 
     private void insertRequestWithoutSnapshot(Connection connection) throws Exception {
@@ -110,13 +110,23 @@ class ExternalTransferV31MigrationIntegrationTest {
                 """, userId, accountId);
     }
 
-    private String previewInsertSql() {
+    private String v30PreviewInsertSql() {
         return """
                 INSERT INTO transfer_previews
                     (initiator_id, source_account_id, destination_account_id, mode, amount, fee,
                      currency, request_fingerprint, expires_at)
                 VALUES (?::uuid, ?::uuid, ?::uuid, 'EXTERNAL', ?::numeric, 0,
                         'VND', 'migration-fingerprint', NOW() + INTERVAL '5 minutes')
+                """;
+    }
+
+    private String latestPreviewInsertSql() {
+        return """
+                INSERT INTO transfer_previews
+                    (initiator_id, source_account_id, destination_account_id, mode, amount, fee,
+                     currency, expires_at)
+                VALUES (?::uuid, ?::uuid, ?::uuid, 'EXTERNAL', ?::numeric, 0,
+                        'VND', NOW() + INTERVAL '5 minutes')
                 """;
     }
 

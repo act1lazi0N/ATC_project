@@ -8,6 +8,7 @@ import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import com.actilazion.aries_transaction.transaction.application.TransferPreviewServiceImpl;
+import com.actilazion.aries_transaction.transaction.application.TransferPreviewProperties;
 import com.actilazion.aries_transaction.transaction.domain.TransferPreview;
 import com.actilazion.aries_transaction.transaction.domain.TransferPreviewMode;
 import com.actilazion.aries_transaction.transaction.dto.TransferPreviewRequest;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
@@ -31,6 +33,7 @@ class TransferPreviewServiceTest {
     @Mock AccountRepository accountRepository;
     @Mock UserRepository userRepository;
     @Mock TransferPreviewRepository previewRepository;
+    @Spy TransferPreviewProperties properties = new TransferPreviewProperties();
     @InjectMocks TransferPreviewServiceImpl service;
 
     @Test

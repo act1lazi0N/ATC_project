@@ -158,7 +158,11 @@ public class IdempotencyService {
     }
 
     public boolean matchesRequest(IdempotencyRecord record, TransferRequest request) {
-        return record.getRequestHash().equals(hash(request));
+        if (record.getRequestHash().equals(hash(request))) {
+            return true;
+        }
+        return request.previewId() == null
+                && record.getRequestHash().equals(hashLegacyTransfer(request));
     }
 
     public boolean matchesRequest(IdempotencyRecord record, ReversalRequest request, Transaction originalTransaction) {
@@ -178,6 +182,17 @@ public class IdempotencyService {
                 request.currency() != null ? request.currency() : "",
                 request.description() != null ? request.description() : "",
                 request.previewId() != null ? request.previewId().toString() : ""
+        );
+    }
+
+    String hashLegacyTransfer(TransferRequest request) {
+        return hashParts(
+                "TRANSFER",
+                request.fromAccountId(),
+                request.toAccountId(),
+                request.amount().stripTrailingZeros().toPlainString(),
+                request.currency() != null ? request.currency() : "",
+                request.description() != null ? request.description() : ""
         );
     }
 

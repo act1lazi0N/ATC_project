@@ -1,12 +1,14 @@
 package com.actilazion.aries_transaction.transaction.api;
 
 import com.actilazion.aries_transaction.transaction.application.TransferService;
+import com.actilazion.aries_transaction.transaction.application.TransferPreviewService;
+import com.actilazion.aries_transaction.transaction.application.TransferPreviewRequestProtection;
 import com.actilazion.aries_transaction.common.redis.DuplicateSuppressionService;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
 import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
 import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
-import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
+import com.actilazion.aries_transaction.transaction.dto.TransferExecuteRequest;
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import org.junit.jupiter.api.BeforeAll;
@@ -45,6 +47,12 @@ class TransferControllerTest {
     @Mock
     DuplicateSuppressionService duplicateSuppression;
 
+    @Mock
+    TransferPreviewService transferPreviewService;
+
+    @Mock
+    TransferPreviewRequestProtection previewRequestProtection;
+
     @InjectMocks
     TransferController transferController;
 
@@ -60,50 +68,42 @@ class TransferControllerTest {
     }
 
     @Test
-    void transfer_validRequest_returnsResponseAndPrincipal() {
+    void execute_validRequest_returnsResponseAndPrincipal() {
         UUID transactionId = UUID.randomUUID();
         UUID fromAccountId = UUID.randomUUID();
         UUID toAccountId = UUID.randomUUID();
         UserDetails principal = principal("sender@test.com");
-        TransferRequest request = new TransferRequest(
-                fromAccountId.toString(),
-                toAccountId.toString(),
-                new BigDecimal("1000000"),
-                "transfer-key-0001",
-                "VND",
-                "Test transfer"
-        );
+        TransferExecuteRequest request = new TransferExecuteRequest(UUID.randomUUID(), "transfer-key-0001");
 
-        when(transferService.transfer(request, "sender@test.com"))
+        when(transferService.execute(request, "sender@test.com"))
                 .thenReturn(response(transactionId, fromAccountId, toAccountId, "1000000", TransactionStatus.COMPLETED));
 
-        var result = transferController.transfer(request, principal);
+        var result = transferController.execute(request, principal);
 
         assertThat(result.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(result.getBody()).isNotNull();
         assertThat(result.getBody().isSuccess()).isTrue();
         assertThat(result.getBody().getMessage()).isEqualTo("Transfer completed successfully");
         assertThat(result.getBody().getData().id()).isEqualTo(transactionId);
-        verify(transferService).transfer(request, "sender@test.com");
+        verify(transferService).execute(request, "sender@test.com");
+        verify(duplicateSuppression).execute(
+                eq("transfer"),
+                eq("sender@test.com"),
+                eq(request.idempotencyKey()),
+                eq(request.previewId().toString()),
+                any()
+        );
     }
 
     @Test
-    void transfer_businessInvalidAmount_isLeftForSharedServicePolicy() {
-        TransferRequest request = new TransferRequest(
-                "",
-                UUID.randomUUID().toString(),
-                new BigDecimal("999"),
-                "short",
-                "VND",
-                null
-        );
+    void execute_missingPreviewAndShortKey_hasValidationViolations() {
+        TransferExecuteRequest request = new TransferExecuteRequest(null, "short");
 
         var violations = validator.validate(request);
 
         assertThat(violations)
                 .extracting(violation -> violation.getPropertyPath().toString())
-                .contains("fromAccountId", "idempotencyKey")
-                .doesNotContain("amount");
+                .contains("previewId", "idempotencyKey");
     }
 
     @Test

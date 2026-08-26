@@ -22,19 +22,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.OffsetDateTime;
-import java.util.HexFormat;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class TransferPreviewServiceImpl implements TransferPreviewService {
-    private static final int PREVIEW_TTL_MINUTES = 5;
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
     private final TransferPreviewRepository previewRepository;
+    private final TransferPreviewProperties properties;
 
     @Override
     @Transactional
@@ -81,7 +78,7 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
         if (source.getBalance().compareTo(amount) < 0) {
             throw new InsufficientBalanceException(source.getBalance(), amount);
         }
-        OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(PREVIEW_TTL_MINUTES);
+        OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(properties.getTtlMinutes());
         TransferPreview preview = previewRepository.save(TransferPreview.builder()
                 .initiator(initiator)
                 .sourceAccount(source)
@@ -91,7 +88,6 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
                 .fee(BigDecimal.ZERO.setScale(2))
                 .currency(request.currency())
                 .description(request.description())
-                .requestFingerprint(fingerprint(request, amount))
                 .expiresAt(expiresAt)
                 .build());
         return response(preview);
@@ -99,19 +95,6 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
 
     private void validateActive(Account account) {
         if (account.getStatus() != AccountStatus.ACTIVE) throw new RecipientUnavailableException();
-    }
-
-    private String fingerprint(TransferPreviewRequest request, BigDecimal amount) {
-        String value = String.join("|", request.mode().name(), request.sourceAccountId().toString(),
-                request.toAccountId() == null ? "" : request.toAccountId().toString(),
-                request.recipientAccountNumber() == null ? "" : request.recipientAccountNumber(),
-                amount.toPlainString(), request.currency(), request.description() == null ? "" : request.description());
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (java.security.NoSuchAlgorithmException ex) {
-            throw new IllegalStateException(ex);
-        }
     }
 
     private TransferPreviewResponse response(TransferPreview preview) {

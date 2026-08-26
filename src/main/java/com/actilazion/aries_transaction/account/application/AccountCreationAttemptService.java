@@ -12,9 +12,8 @@ import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import com.actilazion.aries_transaction.transaction.domain.AccountCreationRequestRecord;
 import com.actilazion.aries_transaction.transaction.infrastructure.AccountCreationRequestRepository;
+import com.actilazion.aries_transaction.audit.application.AuditLogService;
 import com.actilazion.aries_transaction.audit.domain.AuditEventType;
-import com.actilazion.aries_transaction.audit.domain.AuditLog;
-import com.actilazion.aries_transaction.audit.infrastructure.AuditLogRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -31,17 +30,20 @@ public class AccountCreationAttemptService implements AccountCreationAttempt {
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
     private final AccountCreationRequestRepository requestRepository;
-    private final AuditLogRepository auditLogRepository;
+    private final AuditLogService auditLogService;
+    private final AccountCreationPolicyProperties policyProperties;
 
     @org.springframework.beans.factory.annotation.Autowired
     public AccountCreationAttemptService(AccountRepository accountRepository,
                                          UserRepository userRepository,
                                          AccountCreationRequestRepository requestRepository,
-                                         AuditLogRepository auditLogRepository) {
+                                         AuditLogService auditLogService,
+                                         AccountCreationPolicyProperties policyProperties) {
         this.accountRepository = accountRepository;
         this.userRepository = userRepository;
         this.requestRepository = requestRepository;
-        this.auditLogRepository = auditLogRepository;
+        this.auditLogService = auditLogService;
+        this.policyProperties = policyProperties;
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -57,7 +59,8 @@ public class AccountCreationAttemptService implements AccountCreationAttempt {
             }
             return AccountCreationResponseSnapshot.fromPayload(existing.get().getResponsePayload());
         }
-        if (accountRepository.countByUserIdAndStatus(owner.getId(), AccountStatus.ACTIVE) >= 5) {
+        if (accountRepository.countByUserIdAndStatus(owner.getId(), AccountStatus.ACTIVE)
+                >= policyProperties.getMaxActiveAccountsPerUser()) {
             throw new AccountLimitExceededException();
         }
         Account account = Account.builder()
@@ -79,21 +82,12 @@ public class AccountCreationAttemptService implements AccountCreationAttempt {
                 .responsePayload(AccountCreationResponseSnapshot.toPayload(response))
                 .account(saved)
                 .build());
-        auditLogRepository.save(AuditLog.builder()
-                .accountId(saved.getId())
-                .eventType(AuditEventType.ACCOUNT_CREATED)
-                .actorId(ownerEmail)
-                .payload(java.util.Map.of("accountId", saved.getId().toString(), "currency", saved.getCurrency()))
-                .build());
+        auditLogService.log(saved, AuditEventType.ACCOUNT_CREATED, ownerEmail);
         log.info("[ACCOUNT] Created accountId={} owner={}", saved.getId(), ownerEmail);
         return response;
     }
 
     private String generateAccountNumber() {
-        String number;
-        do {
-            number = String.format("%012d", ThreadLocalRandom.current().nextLong(ACCOUNT_NUMBER_BOUND));
-        } while (accountRepository.existsByAccountNumber(number));
-        return number;
+        return String.format("%012d", ThreadLocalRandom.current().nextLong(ACCOUNT_NUMBER_BOUND));
     }
 }

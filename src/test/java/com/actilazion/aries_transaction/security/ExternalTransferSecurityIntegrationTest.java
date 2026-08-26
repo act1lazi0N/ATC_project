@@ -114,6 +114,26 @@ class ExternalTransferSecurityIntegrationTest {
     }
 
     @Test
+    void preview_userRateLimitReturns429WithRetryAfter() throws Exception {
+        User owner = user(Role.USER);
+        Account source = account(owner, "5000.00");
+        String token = tokenFor(owner);
+        String body = """
+                {"mode":"EXTERNAL","sourceAccountId":"%s","recipientAccountNumber":"999999999998","amount":"1000","currency":"VND"}
+                """.formatted(source.getId());
+
+        for (int request = 0; request < 30; request++) {
+            assertThat(post("/api/v1/transfers/preview", token, body).statusCode()).isEqualTo(404);
+        }
+
+        HttpResponse<String> response = post("/api/v1/transfers/preview", token, body);
+
+        assertThat(response.statusCode()).isEqualTo(429);
+        assertThat(response.headers().firstValue("Retry-After")).isPresent();
+        assertThat(response.body()).contains("RATE_LIMITED").doesNotContain("999999999998");
+    }
+
+    @Test
     void preview_businessInvalidAmountsReturnStable422() throws Exception {
         User owner = user(Role.USER);
         Account source = account(owner, "5000.00");
@@ -129,7 +149,7 @@ class ExternalTransferSecurityIntegrationTest {
     }
 
     @Test
-    void compatibilityTransfer_businessInvalidAmountReturnsStable422() throws Exception {
+    void directTransferCompatibilityPayload_withoutPreviewIsRejected() throws Exception {
         User owner = user(Role.USER);
         Account source = account(owner, "5000.00");
         Account recipient = account(user(Role.USER), "0.00");
@@ -139,7 +159,8 @@ class ExternalTransferSecurityIntegrationTest {
 
         HttpResponse<String> response = post("/api/v1/transfers", tokenFor(owner), body);
 
-        assertInvalidAmount(response);
+        assertThat(response.statusCode()).isEqualTo(400);
+        assertThat(response.body()).contains("VALIDATION_ERROR", "previewId");
     }
 
     @Test
@@ -231,7 +252,6 @@ class ExternalTransferSecurityIntegrationTest {
                 .amount(new BigDecimal("1000.00"))
                 .fee(BigDecimal.ZERO.setScale(2))
                 .currency("VND")
-                .requestFingerprint(UUID.randomUUID().toString())
                 .expiresAt(expiresAt)
                 .consumedAt(consumedAt)
                 .build());

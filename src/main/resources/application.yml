@@ -66,6 +66,19 @@ springdoc:
     enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:false}
 
 app:
+  account:
+    creation:
+      max-active-accounts-per-user: ${ACCOUNT_MAX_ACTIVE_ACCOUNTS_PER_USER:5}
+  transfer:
+    preview:
+      ttl-minutes: ${TRANSFER_PREVIEW_TTL_MINUTES:5}
+      rate-limit-window-seconds: ${TRANSFER_PREVIEW_RATE_LIMIT_WINDOW_SECONDS:60}
+      user-requests: ${TRANSFER_PREVIEW_USER_REQUESTS:30}
+      ip-requests: ${TRANSFER_PREVIEW_IP_REQUESTS:120}
+      minimum-response-millis: ${TRANSFER_PREVIEW_MINIMUM_RESPONSE_MILLIS:50}
+      retention-hours: ${TRANSFER_PREVIEW_RETENTION_HOURS:24}
+      cleanup-enabled: ${TRANSFER_PREVIEW_CLEANUP_ENABLED:true}
+      cleanup-fixed-delay-ms: ${TRANSFER_PREVIEW_CLEANUP_FIXED_DELAY_MS:3600000}
   outbox:
     worker-enabled: ${OUTBOX_WORKER_ENABLED:false}
     publisher: ${OUTBOX_PUBLISHER:noop}

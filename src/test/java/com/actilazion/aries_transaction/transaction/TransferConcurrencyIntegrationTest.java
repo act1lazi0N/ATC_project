@@ -60,8 +60,8 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
     void setUp() {
         sender = createUser("sender-" + UUID.randomUUID() + "@test.com", "Sender");
         receiver = createUser("receiver-" + UUID.randomUUID() + "@test.com", "Receiver");
-        senderAccount = createAccount(sender, new BigDecimal("1000"));
-        receiverAccount = createAccount(receiver, new BigDecimal("1000"));
+        senderAccount = createAccount(sender, new BigDecimal("100000"));
+        receiverAccount = createAccount(receiver, new BigDecimal("100000"));
     }
 
     @AfterEach
@@ -78,7 +78,7 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
     @Test
     @DisplayName("Concurrent debit from same account: only one succeeds when balance is insufficient")
     void concurrentDebitFromSameAccount_onlyOneSucceedsIfBalanceInsufficient() throws Exception {
-        senderAccount.setBalance(new BigDecimal("100"));
+        senderAccount.setBalance(new BigDecimal("10000"));
         receiverAccount.setBalance(BigDecimal.ZERO);
         accountRepository.save(senderAccount);
         accountRepository.save(receiverAccount);
@@ -86,8 +86,8 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
         User secondReceiver = createUser("receiver-" + UUID.randomUUID() + "@test.com", "Second Receiver");
         Account secondReceiverAccount = createAccount(secondReceiver, BigDecimal.ZERO);
 
-        TransferRequest firstRequest = transferRequest(senderAccount, receiverAccount, new BigDecimal("80"));
-        TransferRequest secondRequest = transferRequest(senderAccount, secondReceiverAccount, new BigDecimal("80"));
+        TransferRequest firstRequest = transferRequest(senderAccount, receiverAccount, new BigDecimal("8000"));
+        TransferRequest secondRequest = transferRequest(senderAccount, secondReceiverAccount, new BigDecimal("8000"));
 
         List<Object> results = runConcurrently(
                 () -> transferService.transfer(firstRequest, sender.getEmail()),
@@ -101,9 +101,9 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
         Account updatedReceiver = accountRepository.findById(receiverAccount.getId()).orElseThrow();
         Account updatedSecondReceiver = accountRepository.findById(secondReceiverAccount.getId()).orElseThrow();
 
-        assertThat(updatedSender.getBalance()).isEqualByComparingTo("20");
+        assertThat(updatedSender.getBalance()).isEqualByComparingTo("2000");
         assertThat(List.of(updatedReceiver.getBalance(), updatedSecondReceiver.getBalance()))
-                .anySatisfy(balance -> assertThat(balance).isEqualByComparingTo("80"))
+                .anySatisfy(balance -> assertThat(balance).isEqualByComparingTo("8000"))
                 .anySatisfy(balance -> assertThat(balance).isEqualByComparingTo("0"));
         assertThat(transactionRepository.count()).isEqualTo(1);
         assertThat(ledgerEntryRepository.count()).isEqualTo(2);
@@ -113,8 +113,8 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
     @Test
     @DisplayName("Opposite transfers: deterministic lock ordering prevents deadlock")
     void oppositeTransfers_lockOrderingPreventsDeadlock() throws Exception {
-        TransferRequest firstRequest = transferRequest(senderAccount, receiverAccount, new BigDecimal("100"));
-        TransferRequest secondRequest = transferRequest(receiverAccount, senderAccount, new BigDecimal("100"));
+        TransferRequest firstRequest = transferRequest(senderAccount, receiverAccount, new BigDecimal("10000"));
+        TransferRequest secondRequest = transferRequest(receiverAccount, senderAccount, new BigDecimal("10000"));
 
         List<Object> results = runConcurrently(
                 () -> transferService.transfer(firstRequest, sender.getEmail()),
@@ -123,9 +123,9 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
 
         assertThat(results).filteredOn(TransactionResponse.class::isInstance).hasSize(2);
         assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
-                .isEqualByComparingTo("1000");
+                .isEqualByComparingTo("100000");
         assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
-                .isEqualByComparingTo("1000");
+                .isEqualByComparingTo("100000");
         assertThat(transactionRepository.count()).isEqualTo(2);
         assertThat(ledgerEntryRepository.count()).isEqualTo(4);
         assertThat(outboxEventRepository.count()).isEqualTo(2);
@@ -134,7 +134,7 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
     @Test
     @DisplayName("Concurrent same idempotency key returns one financial effect")
     void concurrentSameIdempotencyKeySameRequest_returnsOriginalResponse() throws Exception {
-        TransferRequest request = transferRequest(senderAccount, receiverAccount, new BigDecimal("100"));
+        TransferRequest request = transferRequest(senderAccount, receiverAccount, new BigDecimal("10000"));
 
         List<Object> results = runConcurrently(
                 () -> transferService.transfer(request, sender.getEmail()),
@@ -151,9 +151,9 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
                 .extracting(TransactionResponse::id)
                 .containsOnly(responses.getFirst().id());
         assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
-                .isEqualByComparingTo("900");
+                .isEqualByComparingTo("90000");
         assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
-                .isEqualByComparingTo("1100");
+                .isEqualByComparingTo("110000");
         assertThat(transactionRepository.count()).isEqualTo(1);
         assertThat(ledgerEntryRepository.count()).isEqualTo(2);
         assertThat(outboxEventRepository.count()).isEqualTo(1);
@@ -163,7 +163,7 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
     @Test
     @DisplayName("Stress: many concurrent debits from same account preserve money invariants")
     void stressConcurrentDebitsFromSameAccount_preservesMoneyInvariants() throws Exception {
-        senderAccount.setBalance(new BigDecimal("1000"));
+        senderAccount.setBalance(new BigDecimal("100000"));
         accountRepository.save(senderAccount);
 
         List<Account> receivers = IntStream.range(0, 20)
@@ -174,7 +174,7 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
                 .toList();
         List<Callable<?>> tasks = receivers.stream()
                 .<Callable<?>>map(receiverAccount -> () -> transferService.transfer(
-                        transferRequest(senderAccount, receiverAccount, new BigDecimal("75")),
+                    transferRequest(senderAccount, receiverAccount, new BigDecimal("7500")),
                         sender.getEmail()
                 ))
                 .toList();
@@ -187,11 +187,11 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
         assertThat(successCount).isEqualTo(13);
         assertThat(insufficientCount).isEqualTo(7);
         assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
-                .isEqualByComparingTo("25");
+                .isEqualByComparingTo("2500");
         BigDecimal totalReceived = receivers.stream()
                 .map(account -> accountRepository.findById(account.getId()).orElseThrow().getBalance())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        assertThat(totalReceived).isEqualByComparingTo("975");
+        assertThat(totalReceived).isEqualByComparingTo("97500");
         assertThat(transactionRepository.count()).isEqualTo(successCount);
         assertThat(ledgerEntryRepository.count()).isEqualTo(successCount * 2);
         assertThat(outboxEventRepository.count()).isEqualTo(successCount);
@@ -207,7 +207,7 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
                     Account toAccount = index % 2 == 0 ? receiverAccount : senderAccount;
                     String actorEmail = index % 2 == 0 ? sender.getEmail() : receiver.getEmail();
                     return transferService.transfer(
-                            transferRequest(fromAccount, toAccount, new BigDecimal("10")),
+                        transferRequest(fromAccount, toAccount, new BigDecimal("1000")),
                             actorEmail
                     );
                 })
@@ -217,9 +217,9 @@ class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport 
 
         assertThat(results).filteredOn(TransactionResponse.class::isInstance).hasSize(20);
         assertThat(accountRepository.findById(senderAccount.getId()).orElseThrow().getBalance())
-                .isEqualByComparingTo("1000");
+                .isEqualByComparingTo("100000");
         assertThat(accountRepository.findById(receiverAccount.getId()).orElseThrow().getBalance())
-                .isEqualByComparingTo("1000");
+                .isEqualByComparingTo("100000");
         assertThat(transactionRepository.count()).isEqualTo(20);
         assertThat(ledgerEntryRepository.count()).isEqualTo(40);
         assertThat(outboxEventRepository.count()).isEqualTo(20);

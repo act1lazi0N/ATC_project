@@ -1,0 +1,3 @@
+security:
+  refresh-cookie:
+    allowed-origins: ${AUTH_REFRESH_ALLOWED_ORIGINS}

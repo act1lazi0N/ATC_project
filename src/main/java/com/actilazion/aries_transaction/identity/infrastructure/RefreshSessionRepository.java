@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -22,11 +23,21 @@ public interface RefreshSessionRepository extends JpaRepository<RefreshSession, 
 
     long countByUserId(UUID userId);
 
+    List<RefreshSession> findAllByUserId(UUID userId);
+
     @Modifying
     @Query("update RefreshSession s set s.revokedAt = :revokedAt, s.revokedReason = :reason "
             + "where s.familyId = :familyId and s.revokedAt is null")
     int revokeActiveByFamilyId(
             @Param("familyId") UUID familyId,
+            @Param("revokedAt") OffsetDateTime revokedAt,
+            @Param("reason") RefreshSessionRevocationReason reason);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("update RefreshSession s set s.revokedAt = :revokedAt, s.revokedReason = :reason "
+            + "where s.user.id = :userId and s.revokedAt is null")
+    int revokeActiveByUserId(
+            @Param("userId") UUID userId,
             @Param("revokedAt") OffsetDateTime revokedAt,
             @Param("reason") RefreshSessionRevocationReason reason);
 }

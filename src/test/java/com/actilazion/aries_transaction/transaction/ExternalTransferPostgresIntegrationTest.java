@@ -17,9 +17,12 @@ import com.actilazion.aries_transaction.ledger.domain.LedgerDirection;
 import com.actilazion.aries_transaction.ledger.infrastructure.LedgerEntryRepository;
 import com.actilazion.aries_transaction.outbox.infrastructure.OutboxEventRepository;
 import com.actilazion.aries_transaction.transaction.application.TransferPreviewService;
+import com.actilazion.aries_transaction.transaction.application.TransferPreviewCleanupJob;
+import com.actilazion.aries_transaction.transaction.application.TransferPreviewProperties;
 import com.actilazion.aries_transaction.transaction.application.TransferService;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecordStatus;
 import com.actilazion.aries_transaction.transaction.domain.TransactionOperation;
+import com.actilazion.aries_transaction.transaction.domain.TransferPreview;
 import com.actilazion.aries_transaction.transaction.domain.TransferPreviewMode;
 import com.actilazion.aries_transaction.transaction.domain.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.transaction.domain.exception.TransferPreviewUnavailableException;
@@ -36,11 +39,13 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.transaction.annotation.Transactional;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.Callable;
@@ -86,6 +91,7 @@ class ExternalTransferPostgresIntegrationTest {
     @Autowired AuditLogRepository auditLogRepository;
     @Autowired OutboxEventRepository outboxEventRepository;
     @Autowired IdempotencyRecordRepository idempotencyRecordRepository;
+    @Autowired TransferPreviewProperties transferPreviewProperties;
     @Autowired JdbcTemplate jdbcTemplate;
 
     @Test
@@ -211,6 +217,26 @@ class ExternalTransferPostgresIntegrationTest {
         assertThat(transferPreviewRepository.findById(previewId).orElseThrow().getConsumedAt()).isNull();
     }
 
+    @Test
+    @Transactional
+    void previewCleanup_deletesOnlyExpiredRowsPastRetentionWindow() {
+        User owner = user("cleanup-owner");
+        Account source = account(owner, "5000.00");
+        Account destination = account(user("cleanup-recipient"), "0.00");
+        OffsetDateTime now = OffsetDateTime.now();
+        TransferPreview stale = transferPreviewRepository.saveAndFlush(previewEntity(
+                owner, source, destination, now.minusHours(25)));
+        TransferPreview retained = transferPreviewRepository.saveAndFlush(previewEntity(
+                owner, source, destination, now.minusHours(23)));
+
+        int deleted = new TransferPreviewCleanupJob(
+                transferPreviewRepository, transferPreviewProperties).purgeExpiredPreviews();
+
+        assertThat(deleted).isEqualTo(1);
+        assertThat(transferPreviewRepository.findById(stale.getId())).isEmpty();
+        assertThat(transferPreviewRepository.findById(retained.getId())).isPresent();
+    }
+
     private UUID preview(User owner, Account source, Account destination, String description) {
         return transferPreviewService.create(new TransferPreviewRequest(
                 TransferPreviewMode.EXTERNAL,
@@ -221,6 +247,24 @@ class ExternalTransferPostgresIntegrationTest {
                 "VND",
                 description
         ), owner.getEmail()).previewId();
+    }
+
+    private TransferPreview previewEntity(
+            User owner,
+            Account source,
+            Account destination,
+            OffsetDateTime expiresAt
+    ) {
+        return TransferPreview.builder()
+                .initiator(owner)
+                .sourceAccount(source)
+                .destinationAccount(destination)
+                .mode(TransferPreviewMode.EXTERNAL)
+                .amount(new BigDecimal("1000.00"))
+                .fee(BigDecimal.ZERO.setScale(2))
+                .currency("VND")
+                .expiresAt(expiresAt)
+                .build();
     }
 
     private User user(String label) {

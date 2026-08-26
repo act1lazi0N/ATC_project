@@ -4,8 +4,10 @@ import com.actilazion.aries_transaction.common.exception.CsrfOriginException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.Getter;
 import lombok.Setter;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
+import org.springframework.validation.annotation.Validated;
 
 import java.util.Arrays;
 import java.util.List;
@@ -13,9 +15,11 @@ import java.util.Set;
 
 @Getter
 @Setter
+@Validated
 @Component
 @ConfigurationProperties(prefix = "security.refresh-cookie")
 public class RefreshCookiePolicy {
+    @NotBlank
     private String allowedOrigins = "";
 
     public List<String> allowedOriginList() {

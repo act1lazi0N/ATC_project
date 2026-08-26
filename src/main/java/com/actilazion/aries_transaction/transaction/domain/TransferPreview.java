@@ -48,9 +48,6 @@ public class TransferPreview {
     @Column(length = 255)
     private String description;
 
-    @Column(name = "request_fingerprint", nullable = false, length = 128)
-    private String requestFingerprint;
-
     @Column(name = "expires_at", nullable = false)
     private OffsetDateTime expiresAt;
 

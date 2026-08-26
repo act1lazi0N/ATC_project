@@ -2,7 +2,9 @@ package com.actilazion.aries_transaction.account;
 
 import com.actilazion.aries_transaction.account.application.AccountService;
 import com.actilazion.aries_transaction.account.application.AccountCreationAttemptService;
+import com.actilazion.aries_transaction.account.application.AccountCreationPolicyProperties;
 import com.actilazion.aries_transaction.account.application.AccountServiceImpl;
+import com.actilazion.aries_transaction.audit.application.AuditLogService;
 import com.actilazion.aries_transaction.account.domain.AccountType;
 import com.actilazion.aries_transaction.account.dto.CreateAccountRequest;
 import com.actilazion.aries_transaction.account.domain.exception.InternalAccountTypeException;
@@ -21,7 +23,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest(showSql = false)
 @ActiveProfiles("test")
-@Import({AccountServiceImpl.class, AccountCreationAttemptService.class})
+@Import({
+        AccountServiceImpl.class,
+        AccountCreationAttemptService.class,
+        AccountCreationPolicyProperties.class,
+        AuditLogService.class
+})
 class AccountServiceIntegrationTest {
     @Autowired AccountService accountService;
     @Autowired UserRepository userRepository;

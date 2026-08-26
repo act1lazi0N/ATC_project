@@ -9,8 +9,12 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -41,6 +45,30 @@ class IdempotencyServiceTest {
 
         assertThatThrownBy(() -> service.createProcessingRecord(request(), INITIATOR_EMAIL))
                 .isSameAs(violation);
+    }
+
+    @Test
+    void matchesRequest_acceptsLegacyHashOnlyForDirectTransfers() throws Exception {
+        TransferRequest direct = request();
+        String legacyCanonical = String.join(
+                "|",
+                "TRANSFER",
+                direct.fromAccountId(),
+                direct.toAccountId(),
+                direct.amount().stripTrailingZeros().toPlainString(),
+                direct.currency(),
+                direct.description()
+        );
+        String legacyHash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                .digest(legacyCanonical.getBytes(StandardCharsets.UTF_8)));
+        IdempotencyRecord record = IdempotencyRecord.builder().requestHash(legacyHash).build();
+
+        assertThat(service.matchesRequest(record, direct)).isTrue();
+
+        TransferRequest preview = new TransferRequest(
+                direct.fromAccountId(), direct.toAccountId(), direct.amount(), direct.idempotencyKey(),
+                direct.currency(), direct.description(), UUID.randomUUID());
+        assertThat(service.matchesRequest(record, preview)).isFalse();
     }
 
     private TransferRequest request() {

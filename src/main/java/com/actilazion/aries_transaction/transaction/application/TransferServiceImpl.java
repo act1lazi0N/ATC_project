@@ -87,7 +87,7 @@ public class TransferServiceImpl implements TransferService {
         if (!preview.getExpiresAt().isAfter(OffsetDateTime.now())) {
             throw new TransferPreviewUnavailableException(TransferPreviewUnavailableException.Reason.EXPIRED);
         }
-        TransactionResponse response = transfer(transferRequest, initiatorEmail);
+        TransactionResponse response = createTransfer(transferRequest, initiator, initiatorEmail);
         preview.setConsumedAt(OffsetDateTime.now());
         transferPreviewRepository.save(preview);
         return response;
@@ -103,8 +103,16 @@ public class TransferServiceImpl implements TransferService {
             return responseForIdempotentRetry(existing.get(), normalizedRequest);
         }
 
-        IdempotencyRecord record = idempotencyService.createProcessingRecord(normalizedRequest, initiatorEmail);
-        TransactionResponse response = doTransfer(normalizedRequest, initiator);
+        return createTransfer(normalizedRequest, initiator, initiatorEmail);
+    }
+
+    private TransactionResponse createTransfer(
+            TransferRequest request,
+            User initiator,
+            String initiatorEmail
+    ) {
+        IdempotencyRecord record = idempotencyService.createProcessingRecord(request, initiatorEmail);
+        TransactionResponse response = doTransfer(request, initiator);
         completeIdempotencyRecord(record, response);
         return response;
     }

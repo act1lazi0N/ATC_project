@@ -5,6 +5,7 @@ import com.actilazion.aries_transaction.identity.dto.AuthResponse;
 import com.actilazion.aries_transaction.identity.dto.LoginRequest;
 import com.actilazion.aries_transaction.identity.dto.RegisterRequest;
 import com.actilazion.aries_transaction.identity.infrastructure.RefreshSessionRepository;
+import com.actilazion.aries_transaction.support.PostgresIntegrationTestSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -15,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
-class RefreshSessionIntegrationTest {
+class RefreshSessionIntegrationTest extends PostgresIntegrationTestSupport {
     @Autowired
     AuthService authService;
 

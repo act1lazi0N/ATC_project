@@ -294,7 +294,7 @@ public class TransferServiceIntegrationTest {
                 .containsEntry("toUserFullName", "Tran Thi B")
                 .containsEntry("fromAccountNumber", "ACC-001")
                 .containsEntry("toAccountNumber", "ACC-002")
-                .containsEntry("amount", "750000")
+                .containsEntry("amount", "750000.00")
                 .containsEntry("currency", "VND")
                 .containsEntry("status", "COMPLETED")
                 .containsEntry("description", "Reporting sync test");

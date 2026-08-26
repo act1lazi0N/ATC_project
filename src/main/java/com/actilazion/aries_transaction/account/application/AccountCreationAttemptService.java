@@ -2,6 +2,8 @@ package com.actilazion.aries_transaction.account.application;
 
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.account.domain.AccountStatus;
+import com.actilazion.aries_transaction.account.domain.exception.AccountCreationIdempotencyConflictException;
+import com.actilazion.aries_transaction.account.domain.exception.AccountLimitExceededException;
 import com.actilazion.aries_transaction.account.dto.AccountResponse;
 import com.actilazion.aries_transaction.account.dto.CreateAccountRequest;
 import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
@@ -42,27 +44,21 @@ public class AccountCreationAttemptService implements AccountCreationAttempt {
         this.auditLogRepository = auditLogRepository;
     }
 
-    public AccountCreationAttemptService(AccountRepository accountRepository, UserRepository userRepository) {
-        this(accountRepository, userRepository, null, null);
-    }
-
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     @Override
     public AccountResponse create(CreateAccountRequest request, String ownerEmail) {
         User owner = userRepository.findByEmailWithLock(ownerEmail)
-                .orElseGet(() -> userRepository.findByEmail(ownerEmail)
-                        .orElseThrow(() -> new ResourceNotFoundException("User", ownerEmail)));
-        if (request.idempotencyKey() != null && requestRepository != null) {
-            var existing = requestRepository.findByUserIdAndIdempotencyKey(owner.getId(), request.idempotencyKey());
-            if (existing.isPresent()) {
-                if (!existing.get().getRequestHash().equals(requestHash(request))) {
-                    throw new IllegalArgumentException("Idempotency key was already used for a different account request");
-                }
-                return AccountResponse.from(existing.get().getAccount());
+                .orElseThrow(() -> new ResourceNotFoundException("User", ownerEmail));
+        String requestHash = AccountCreationFingerprint.hash(request);
+        var existing = requestRepository.findByUserIdAndIdempotencyKey(owner.getId(), request.idempotencyKey());
+        if (existing.isPresent()) {
+            if (!existing.get().getRequestHash().equals(requestHash)) {
+                throw new AccountCreationIdempotencyConflictException();
             }
+            return AccountCreationResponseSnapshot.fromPayload(existing.get().getResponsePayload());
         }
         if (accountRepository.countByUserIdAndStatus(owner.getId(), AccountStatus.ACTIVE) >= 5) {
-            throw new IllegalStateException("Maximum of 5 active accounts is allowed");
+            throw new AccountLimitExceededException();
         }
         Account account = Account.builder()
                 .user(owner)
@@ -75,26 +71,22 @@ public class AccountCreationAttemptService implements AccountCreationAttempt {
                 .build();
 
         Account saved = accountRepository.saveAndFlush(account);
-        if (request.idempotencyKey() != null && requestRepository != null) {
-            requestRepository.saveAndFlush(AccountCreationRequestRecord.builder()
-                    .user(owner)
-                    .idempotencyKey(request.idempotencyKey())
-                    .requestHash(requestHash(request))
-                    .account(saved)
-                    .build());
-        }
-        if (auditLogRepository != null) auditLogRepository.save(AuditLog.builder()
+        AccountResponse response = AccountResponse.from(saved);
+        requestRepository.saveAndFlush(AccountCreationRequestRecord.builder()
+                .user(owner)
+                .idempotencyKey(request.idempotencyKey())
+                .requestHash(requestHash)
+                .responsePayload(AccountCreationResponseSnapshot.toPayload(response))
+                .account(saved)
+                .build());
+        auditLogRepository.save(AuditLog.builder()
                 .accountId(saved.getId())
                 .eventType(AuditEventType.ACCOUNT_CREATED)
                 .actorId(ownerEmail)
                 .payload(java.util.Map.of("accountId", saved.getId().toString(), "currency", saved.getCurrency()))
                 .build());
         log.info("[ACCOUNT] Created accountId={} owner={}", saved.getId(), ownerEmail);
-        return AccountResponse.from(saved);
-    }
-
-    private String requestHash(CreateAccountRequest request) {
-        return Integer.toHexString(java.util.Objects.hash(request.accountType(), request.currency(), request.description()));
+        return response;
     }
 
     private String generateAccountNumber() {

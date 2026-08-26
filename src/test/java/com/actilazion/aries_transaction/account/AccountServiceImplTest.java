@@ -7,9 +7,11 @@ import com.actilazion.aries_transaction.account.domain.AccountType;
 import com.actilazion.aries_transaction.account.domain.exception.AccountNumberGenerationException;
 import com.actilazion.aries_transaction.account.dto.CreateAccountRequest;
 import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
+import com.actilazion.aries_transaction.audit.infrastructure.AuditLogRepository;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
+import com.actilazion.aries_transaction.transaction.infrastructure.AccountCreationRequestRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Propagation;
@@ -33,21 +35,27 @@ class AccountServiceImplTest {
 
     private final AccountRepository accountRepository = mock(AccountRepository.class);
     private final UserRepository userRepository = mock(UserRepository.class);
+    private final AccountCreationRequestRepository requestRepository = mock(AccountCreationRequestRepository.class);
+    private final AuditLogRepository auditLogRepository = mock(AuditLogRepository.class);
     private final AccountServiceImpl accountService = new AccountServiceImpl(
             accountRepository,
             userRepository,
-            new AccountCreationAttemptService(accountRepository, userRepository)
+            new AccountCreationAttemptService(accountRepository, userRepository, requestRepository, auditLogRepository)
     );
 
     @Test
     void create_retriesWhenGeneratedAccountNumberCollidesAtDatabase() {
-        when(userRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(owner()));
+        User owner = owner();
+        when(userRepository.findByEmailWithLock(OWNER_EMAIL)).thenReturn(Optional.of(owner));
+        when(requestRepository.findByUserIdAndIdempotencyKey(owner.getId(), "account-key-0001"))
+                .thenReturn(Optional.empty());
         when(accountRepository.existsByAccountNumber(anyString())).thenReturn(false);
         when(accountRepository.saveAndFlush(any(Account.class)))
                 .thenThrow(new DataIntegrityViolationException("duplicate key uk_accounts_number"))
                 .thenAnswer(invocation -> persist(invocation.getArgument(0)));
 
-        var response = accountService.create(new CreateAccountRequest(AccountType.PERSONAL, "VND", null), OWNER_EMAIL);
+        var response = accountService.create(
+                new CreateAccountRequest(AccountType.PERSONAL, "VND", null, "account-key-0001"), OWNER_EMAIL);
 
         assertThat(response.id()).isNotNull();
         assertThat(response.accountNumber()).hasSize(12);
@@ -56,13 +64,16 @@ class AccountServiceImplTest {
 
     @Test
     void create_exhaustedAccountNumberCollisions_throwsDomainException() {
-        when(userRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(owner()));
+        User owner = owner();
+        when(userRepository.findByEmailWithLock(OWNER_EMAIL)).thenReturn(Optional.of(owner));
+        when(requestRepository.findByUserIdAndIdempotencyKey(owner.getId(), "account-key-0002"))
+                .thenReturn(Optional.empty());
         when(accountRepository.existsByAccountNumber(anyString())).thenReturn(false);
         when(accountRepository.saveAndFlush(any(Account.class)))
                 .thenThrow(new DataIntegrityViolationException("duplicate key uk_accounts_number"));
 
         assertThatThrownBy(() -> accountService.create(
-                new CreateAccountRequest(AccountType.PERSONAL, "VND", null),
+                new CreateAccountRequest(AccountType.PERSONAL, "VND", null, "account-key-0002"),
                 OWNER_EMAIL
         )).isInstanceOf(AccountNumberGenerationException.class);
 
@@ -71,13 +82,16 @@ class AccountServiceImplTest {
 
     @Test
     void create_propagatesIntegrityViolationForOtherConstraint() {
-        when(userRepository.findByEmail(OWNER_EMAIL)).thenReturn(Optional.of(owner()));
+        User owner = owner();
+        when(userRepository.findByEmailWithLock(OWNER_EMAIL)).thenReturn(Optional.of(owner));
+        when(requestRepository.findByUserIdAndIdempotencyKey(owner.getId(), "account-key-0003"))
+                .thenReturn(Optional.empty());
         when(accountRepository.existsByAccountNumber(anyString())).thenReturn(false);
         DataIntegrityViolationException violation = new DataIntegrityViolationException("uk_accounts_owner");
         when(accountRepository.saveAndFlush(any(Account.class))).thenThrow(violation);
 
         assertThatThrownBy(() -> accountService.create(
-                new CreateAccountRequest(AccountType.PERSONAL, "VND", null),
+                new CreateAccountRequest(AccountType.PERSONAL, "VND", null, "account-key-0003"),
                 OWNER_EMAIL
         )).isSameAs(violation);
 

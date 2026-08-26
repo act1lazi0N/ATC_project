@@ -13,8 +13,6 @@ public record TransferRequest(
         String toAccountId,
 
         @NotNull(message = "amount is required")
-        @DecimalMin(value = "1000", message = "Minimum transfer amount is 1000")
-        @Digits(integer = 16, fraction = 2, message = "Invalid amount format")
         BigDecimal amount,
 
         @NotBlank(message = "idempotencyKey is required")

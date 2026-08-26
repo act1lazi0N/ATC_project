@@ -41,7 +41,7 @@ class AccountServiceIntegrationTest {
     @Test
     @DisplayName("User account creation rejects internal account types")
     void create_internalAccountType_throwsException() {
-        var request = new CreateAccountRequest(AccountType.CLEARING, "VND", null);
+        var request = new CreateAccountRequest(AccountType.CLEARING, "VND", null, "account-key-0001");
 
         assertThatThrownBy(() -> accountService.create(request, OWNER_EMAIL))
                 .isInstanceOf(InternalAccountTypeException.class);

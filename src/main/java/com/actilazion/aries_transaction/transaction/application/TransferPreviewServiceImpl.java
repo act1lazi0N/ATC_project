@@ -9,6 +9,7 @@ import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import com.actilazion.aries_transaction.transaction.domain.TransferPreview;
 import com.actilazion.aries_transaction.transaction.domain.TransferPreviewMode;
+import com.actilazion.aries_transaction.transaction.domain.TransferAmountPolicy;
 import com.actilazion.aries_transaction.transaction.domain.exception.CurrencyMismatchException;
 import com.actilazion.aries_transaction.transaction.domain.exception.InsufficientBalanceException;
 import com.actilazion.aries_transaction.transaction.domain.exception.RecipientUnavailableException;
@@ -76,7 +77,7 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
         if (!"VND".equals(request.currency())) {
             throw new CurrencyMismatchException("Unsupported currency");
         }
-        BigDecimal amount = normalizeAmount(request.amount());
+        BigDecimal amount = TransferAmountPolicy.normalize(request.amount());
         if (source.getBalance().compareTo(amount) < 0) {
             throw new InsufficientBalanceException(source.getBalance(), amount);
         }
@@ -94,16 +95,6 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
                 .expiresAt(expiresAt)
                 .build());
         return response(preview);
-    }
-
-    private BigDecimal normalizeAmount(String raw) {
-        try {
-            BigDecimal amount = new BigDecimal(raw).setScale(2);
-            if (amount.signum() <= 0 || amount.scale() > 2) throw new IllegalArgumentException("Invalid amount");
-            return amount;
-        } catch (ArithmeticException | NumberFormatException ex) {
-            throw new IllegalArgumentException("Invalid amount");
-        }
     }
 
     private void validateActive(Account account) {

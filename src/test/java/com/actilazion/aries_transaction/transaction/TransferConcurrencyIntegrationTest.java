@@ -10,6 +10,7 @@ import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import com.actilazion.aries_transaction.ledger.infrastructure.LedgerEntryRepository;
 import com.actilazion.aries_transaction.outbox.infrastructure.OutboxEventRepository;
+import com.actilazion.aries_transaction.support.PostgresIntegrationTestSupport;
 import com.actilazion.aries_transaction.transaction.application.TransferService;
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
@@ -40,7 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
 @ActiveProfiles("test")
-class TransferConcurrencyIntegrationTest {
+class TransferConcurrencyIntegrationTest extends PostgresIntegrationTestSupport {
     @Autowired TransferService transferService;
     @Autowired AccountRepository accountRepository;
     @Autowired TransactionRepository transactionRepository;

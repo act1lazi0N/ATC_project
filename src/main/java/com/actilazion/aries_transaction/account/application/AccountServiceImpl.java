@@ -36,6 +36,9 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     public AccountResponse create(CreateAccountRequest request, String ownerEmail) {
+        if (request.idempotencyKey() == null || request.idempotencyKey().isBlank()) {
+            throw new IllegalArgumentException("idempotencyKey is required");
+        }
         validatePublicAccountType(request.accountType());
         if (!"VND".equals(request.currency())) {
             throw new IllegalArgumentException("Unsupported currency");

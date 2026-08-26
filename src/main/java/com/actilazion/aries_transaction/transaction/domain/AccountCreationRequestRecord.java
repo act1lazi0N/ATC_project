@@ -5,8 +5,11 @@ import com.actilazion.aries_transaction.identity.domain.User;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -28,6 +31,10 @@ public class AccountCreationRequestRecord {
 
     @Column(name = "request_hash", nullable = false, length = 128)
     private String requestHash;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "response_payload", nullable = false, updatable = false, columnDefinition = "jsonb")
+    private Map<String, Object> responsePayload;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "account_id", nullable = false)

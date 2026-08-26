@@ -88,7 +88,7 @@ class TransferControllerTest {
     }
 
     @Test
-    void transfer_invalidRequest_hasValidationViolations() {
+    void transfer_businessInvalidAmount_isLeftForSharedServicePolicy() {
         TransferRequest request = new TransferRequest(
                 "",
                 UUID.randomUUID().toString(),
@@ -102,7 +102,8 @@ class TransferControllerTest {
 
         assertThat(violations)
                 .extracting(violation -> violation.getPropertyPath().toString())
-                .contains("fromAccountId", "amount", "idempotencyKey");
+                .contains("fromAccountId", "idempotencyKey")
+                .doesNotContain("amount");
     }
 
     @Test

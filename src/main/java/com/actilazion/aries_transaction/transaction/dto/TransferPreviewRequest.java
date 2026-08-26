@@ -10,7 +10,7 @@ public record TransferPreviewRequest(
         @NotNull UUID sourceAccountId,
         UUID toAccountId,
         String recipientAccountNumber,
-        @NotBlank @Pattern(regexp = "^\\d{1,16}(\\.\\d{1,2})?$", message = "amount must be a decimal string") String amount,
+        @NotBlank @Pattern(regexp = "^\\d{1,16}(\\.\\d+)?$", message = "amount must be a decimal string") String amount,
         @NotBlank @Pattern(regexp = "^[A-Z]{3}$") String currency,
         @Size(max = 255) String description
 ) {}

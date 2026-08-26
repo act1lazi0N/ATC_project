@@ -18,6 +18,7 @@ import com.actilazion.aries_transaction.transaction.domain.TransferPreview;
 import com.actilazion.aries_transaction.transaction.domain.TransactionOperation;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStateGuard;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
+import com.actilazion.aries_transaction.transaction.domain.TransferAmountPolicy;
 import com.actilazion.aries_transaction.transaction.domain.exception.AccountNotActiveException;
 import com.actilazion.aries_transaction.transaction.domain.exception.CurrencyMismatchException;
 import com.actilazion.aries_transaction.transaction.domain.exception.DuplicateTransferException;
@@ -26,6 +27,7 @@ import com.actilazion.aries_transaction.transaction.domain.exception.Insufficien
 import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
 import com.actilazion.aries_transaction.transaction.domain.exception.RefundAmountExceededException;
 import com.actilazion.aries_transaction.transaction.domain.exception.SelfTransferException;
+import com.actilazion.aries_transaction.transaction.domain.exception.TransferPreviewUnavailableException;
 import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
 import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
@@ -64,10 +66,14 @@ public class TransferServiceImpl implements TransferService {
         User initiator = lockInitiator(initiatorEmail);
         TransferPreview preview = transferPreviewRepository.findByIdWithLock(request.previewId())
                 .orElseThrow(() -> new ResourceNotFoundException("Transfer preview", request.previewId()));
+        if (!preview.getInitiator().getId().equals(initiator.getId())) {
+            throw new ForbiddenOperationException("Caller is not authorized for this transfer preview");
+        }
         TransferRequest transferRequest = new TransferRequest(
                 preview.getSourceAccount().getId().toString(),
                 preview.getDestinationAccount().getId().toString(),
-                preview.getAmount(), request.idempotencyKey(), preview.getCurrency(), preview.getDescription(), preview.getId());
+                TransferAmountPolicy.normalize(preview.getAmount()), request.idempotencyKey(),
+                preview.getCurrency(), preview.getDescription(), preview.getId());
         var existing = idempotencyService.findTransferRecord(transferRequest, initiatorEmail);
         if (existing.isPresent()) {
             if (!idempotencyService.matchesRequest(existing.get(), transferRequest)) {
@@ -75,10 +81,11 @@ public class TransferServiceImpl implements TransferService {
             }
             return idempotencyService.responseFromPayload(existing.get(), request.idempotencyKey());
         }
-        if (!preview.getInitiator().getId().equals(initiator.getId())
-                || preview.getConsumedAt() != null
-                || preview.getExpiresAt().isBefore(OffsetDateTime.now())) {
-            throw new IllegalArgumentException("Transfer preview is expired, consumed, or not owned by caller");
+        if (preview.getConsumedAt() != null) {
+            throw new TransferPreviewUnavailableException(TransferPreviewUnavailableException.Reason.CONSUMED);
+        }
+        if (!preview.getExpiresAt().isAfter(OffsetDateTime.now())) {
+            throw new TransferPreviewUnavailableException(TransferPreviewUnavailableException.Reason.EXPIRED);
         }
         TransactionResponse response = transfer(transferRequest, initiatorEmail);
         preview.setConsumedAt(OffsetDateTime.now());
@@ -89,16 +96,29 @@ public class TransferServiceImpl implements TransferService {
     @Override
     @Transactional
     public TransactionResponse transfer(TransferRequest request, String initiatorEmail) {
+        TransferRequest normalizedRequest = normalizeTransferRequest(request);
         User initiator = lockInitiator(initiatorEmail);
-        var existing = idempotencyService.findTransferRecord(request, initiatorEmail);
+        var existing = idempotencyService.findTransferRecord(normalizedRequest, initiatorEmail);
         if (existing.isPresent()) {
-            return responseForIdempotentRetry(existing.get(), request);
+            return responseForIdempotentRetry(existing.get(), normalizedRequest);
         }
 
-        IdempotencyRecord record = idempotencyService.createProcessingRecord(request, initiatorEmail);
-        TransactionResponse response = doTransfer(request, initiator);
+        IdempotencyRecord record = idempotencyService.createProcessingRecord(normalizedRequest, initiatorEmail);
+        TransactionResponse response = doTransfer(normalizedRequest, initiator);
         completeIdempotencyRecord(record, response);
         return response;
+    }
+
+    private TransferRequest normalizeTransferRequest(TransferRequest request) {
+        return new TransferRequest(
+                request.fromAccountId(),
+                request.toAccountId(),
+                TransferAmountPolicy.normalize(request.amount()),
+                request.idempotencyKey(),
+                request.currency(),
+                request.description(),
+                request.previewId()
+        );
     }
 
     @Override

@@ -4,6 +4,8 @@ import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.account.domain.AccountStatus;
 import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
 import com.actilazion.aries_transaction.account.application.AccountPartyMasking;
+import com.actilazion.aries_transaction.audit.application.AuditLogService;
+import com.actilazion.aries_transaction.audit.domain.AuditEventType;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
 import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
 import com.actilazion.aries_transaction.identity.domain.User;
@@ -33,6 +35,7 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
     private final UserRepository userRepository;
     private final TransferPreviewRepository previewRepository;
     private final TransferPreviewProperties properties;
+    private final AuditLogService auditLogService;
 
     @Override
     @Transactional
@@ -91,6 +94,7 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
                 .description(request.description())
                 .expiresAt(expiresAt)
                 .build());
+        auditLogService.log(preview, AuditEventType.TRANSFER_PREVIEW_CREATED, initiatorEmail);
         return response(preview);
     }
 

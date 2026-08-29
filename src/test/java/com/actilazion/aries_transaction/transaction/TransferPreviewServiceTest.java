@@ -7,6 +7,7 @@ import com.actilazion.aries_transaction.account.infrastructure.AccountRepository
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
+import com.actilazion.aries_transaction.audit.application.AuditLogService;
 import com.actilazion.aries_transaction.transaction.application.TransferPreviewServiceImpl;
 import com.actilazion.aries_transaction.transaction.application.TransferPreviewProperties;
 import com.actilazion.aries_transaction.transaction.domain.TransferPreview;
@@ -33,6 +34,7 @@ class TransferPreviewServiceTest {
     @Mock AccountRepository accountRepository;
     @Mock UserRepository userRepository;
     @Mock TransferPreviewRepository previewRepository;
+    @Mock AuditLogService auditLogService;
     @Spy TransferPreviewProperties properties = new TransferPreviewProperties();
     @InjectMocks TransferPreviewServiceImpl service;
 

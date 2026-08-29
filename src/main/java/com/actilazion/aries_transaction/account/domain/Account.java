@@ -28,7 +28,8 @@ public class Account {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(name = "account_number", nullable = false, unique = true, length = 20)
+    @Column(name = "account_number", nullable = false, unique = true, length = 20, updatable = false)
+    @Setter(AccessLevel.NONE)
     private String accountNumber;
 
     @Enumerated(EnumType.STRING)

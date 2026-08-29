@@ -36,8 +36,14 @@ public class AccountServiceImpl implements AccountService {
 
     @Override
     public AccountResponse create(CreateAccountRequest request, String ownerEmail) {
+        if (request == null) {
+            throw new IllegalArgumentException("Create account request is required");
+        }
         if (request.idempotencyKey() == null || request.idempotencyKey().isBlank()) {
             throw new IllegalArgumentException("idempotencyKey is required");
+        }
+        if (request.accountType() == null) {
+            throw new IllegalArgumentException("accountType is required");
         }
         validatePublicAccountType(request.accountType());
         if (!"VND".equals(request.currency())) {
@@ -64,7 +70,8 @@ public class AccountServiceImpl implements AccountService {
             if (cause instanceof ConstraintViolationException violation) {
                 return "uk_accounts_number".equals(violation.getConstraintName());
             }
-            if (cause.getMessage() != null && cause.getMessage().contains("uk_accounts_number")) {
+            if (cause.getMessage() != null
+                    && cause.getMessage().toLowerCase(java.util.Locale.ROOT).contains("uk_accounts_number")) {
                 return true;
             }
         }

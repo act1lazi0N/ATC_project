@@ -15,25 +15,41 @@ import com.actilazion.aries_transaction.transaction.infrastructure.AccountCreati
 import com.actilazion.aries_transaction.audit.application.AuditLogService;
 import com.actilazion.aries_transaction.audit.domain.AuditEventType;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
 @Service
 public class AccountCreationAttemptService implements AccountCreationAttempt {
-    private static final long ACCOUNT_NUMBER_BOUND = 1_000_000_000_000L;
-
     private final AccountRepository accountRepository;
     private final UserRepository userRepository;
     private final AccountCreationRequestRepository requestRepository;
     private final AuditLogService auditLogService;
     private final AccountCreationPolicyProperties policyProperties;
+    private final AccountNumberGenerator accountNumberGenerator;
 
     @org.springframework.beans.factory.annotation.Autowired
+    public AccountCreationAttemptService(AccountRepository accountRepository,
+                                         UserRepository userRepository,
+                                         AccountCreationRequestRepository requestRepository,
+                                         AuditLogService auditLogService,
+                                         AccountCreationPolicyProperties policyProperties,
+                                         ObjectProvider<AccountNumberGenerator> accountNumberGeneratorProvider) {
+        this.accountRepository = accountRepository;
+        this.userRepository = userRepository;
+        this.requestRepository = requestRepository;
+        this.auditLogService = auditLogService;
+        this.policyProperties = policyProperties;
+        this.accountNumberGenerator = accountNumberGeneratorProvider.getIfAvailable(AccountNumberGenerator::new);
+    }
+
+    /**
+     * Kept for focused unit tests and small non-Spring callers.
+     */
     public AccountCreationAttemptService(AccountRepository accountRepository,
                                          UserRepository userRepository,
                                          AccountCreationRequestRepository requestRepository,
@@ -44,6 +60,7 @@ public class AccountCreationAttemptService implements AccountCreationAttempt {
         this.requestRepository = requestRepository;
         this.auditLogService = auditLogService;
         this.policyProperties = policyProperties;
+        this.accountNumberGenerator = new AccountNumberGenerator();
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -88,6 +105,6 @@ public class AccountCreationAttemptService implements AccountCreationAttempt {
     }
 
     private String generateAccountNumber() {
-        return String.format("%012d", ThreadLocalRandom.current().nextLong(ACCOUNT_NUMBER_BOUND));
+        return accountNumberGenerator.generate();
     }
 }

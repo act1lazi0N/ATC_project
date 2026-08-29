@@ -3,6 +3,7 @@ package com.actilazion.aries_transaction.transaction.application;
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.account.domain.AccountStatus;
 import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
+import com.actilazion.aries_transaction.account.application.AccountPartyMasking;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
 import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
 import com.actilazion.aries_transaction.identity.domain.User;
@@ -105,10 +106,8 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
     }
 
     private TransferPreviewResponse.MaskedAccount masked(Account account) {
-        String number = account.getAccountNumber();
-        String masked = "********" + number.substring(Math.max(0, number.length() - 4));
-        String name = account.getUser().getFullName();
-        String display = name == null || name.length() <= 1 ? "***" : name.charAt(0) + "***";
-        return new TransferPreviewResponse.MaskedAccount(masked, display);
+        return new TransferPreviewResponse.MaskedAccount(
+                AccountPartyMasking.maskedNumber(account),
+                AccountPartyMasking.safeDisplayName(account));
     }
 }

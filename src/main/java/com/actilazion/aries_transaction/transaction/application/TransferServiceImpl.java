@@ -406,8 +406,9 @@ public class TransferServiceImpl implements TransferService {
     public TransactionResponse getById(UUID txId, String requesterEmail) {
         Transaction tx = transactionRepository.findById(txId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transaction", txId));
-        assertCanReadTransaction(tx, requesterEmail);
-        return TransactionResponse.from(tx);
+        User requester = findRequester(requesterEmail);
+        assertCanReadTransaction(tx, requester);
+        return TransactionReadProjection.project(tx, requester, null);
     }
 
     @Override
@@ -415,10 +416,11 @@ public class TransferServiceImpl implements TransferService {
     public Page<TransactionResponse> getByAccount(UUID accountId, Pageable pageable, String requesterEmail) {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
-        assertCanReadAccount(account, requesterEmail);
+        User requester = findRequester(requesterEmail);
+        assertCanReadAccount(account, requester);
         return transactionRepository
                 .findAllByAccountId(accountId, pageable)
-                .map(TransactionResponse::from);
+                .map(transaction -> TransactionReadProjection.project(transaction, requester, accountId));
     }
 
     private Account lockAccount(UUID accountId) {
@@ -442,30 +444,37 @@ public class TransferServiceImpl implements TransferService {
     private record AccountPair(Account fromAccount, Account toAccount) {
     }
 
-    private void assertCanReadTransaction(Transaction tx, String requesterEmail) {
-        if (isPrivileged(requesterEmail)
-                || isAccountOwner(tx.getFromAccount(), requesterEmail)
-                || isAccountOwner(tx.getToAccount(), requesterEmail)) {
+    private void assertCanReadTransaction(Transaction tx, User requester) {
+        if (isPrivileged(requester)
+                || isAccountOwner(tx.getFromAccount(), requester)
+                || isAccountOwner(tx.getToAccount(), requester)) {
             return;
         }
         throw new ForbiddenOperationException("Not allowed to read this transaction");
     }
 
-    private void assertCanReadAccount(Account account, String requesterEmail) {
-        if (isPrivileged(requesterEmail) || isAccountOwner(account, requesterEmail)) {
+    private void assertCanReadAccount(Account account, User requester) {
+        if (isPrivileged(requester) || isAccountOwner(account, requester)) {
             return;
         }
         throw new ForbiddenOperationException("Not allowed to read this account history");
     }
 
-    private boolean isPrivileged(String requesterEmail) {
-        return userRepository.findByEmail(requesterEmail)
-                .map(user -> user.getRole() == Role.ADMIN || user.getRole() == Role.OPERATOR)
-                .orElse(false);
+    private boolean isPrivileged(User requester) {
+        return requester.getRole() == Role.ADMIN || requester.getRole() == Role.OPERATOR;
     }
 
-    private boolean isAccountOwner(Account account, String requesterEmail) {
-        return account.getUser().getEmail().equals(requesterEmail);
+    private boolean isAccountOwner(Account account, User requester) {
+        return account != null && account.getUser() != null
+                && account.getUser().getId() != null
+                && requester != null
+                && requester.getId() != null
+                && account.getUser().getId().equals(requester.getId());
+    }
+
+    private User findRequester(String requesterEmail) {
+        return userRepository.findByEmail(requesterEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User", requesterEmail));
     }
 
     private Transaction lockTransaction(UUID transactionId) {

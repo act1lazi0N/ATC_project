@@ -1,11 +1,11 @@
 package com.actilazion.aries_transaction.account.dto;
 
 import com.actilazion.aries_transaction.account.domain.AccountType;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import tools.jackson.databind.annotation.JsonDeserialize;
 
 @JsonDeserialize(using = CreateAccountRequestDeserializer.class)
 public record CreateAccountRequest(

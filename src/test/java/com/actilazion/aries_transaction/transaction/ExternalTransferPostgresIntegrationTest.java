@@ -26,6 +26,8 @@ import com.actilazion.aries_transaction.transaction.domain.TransferPreview;
 import com.actilazion.aries_transaction.transaction.domain.TransferPreviewMode;
 import com.actilazion.aries_transaction.transaction.domain.exception.IdempotencyConflictException;
 import com.actilazion.aries_transaction.transaction.domain.exception.TransferPreviewUnavailableException;
+import com.actilazion.aries_transaction.transaction.dto.AccountNumberExposure;
+import com.actilazion.aries_transaction.transaction.dto.TransactionDirection;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import com.actilazion.aries_transaction.transaction.dto.TransferExecuteRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransferPreviewRequest;
@@ -35,6 +37,7 @@ import com.actilazion.aries_transaction.transaction.infrastructure.TransferPrevi
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -183,6 +186,44 @@ class ExternalTransferPostgresIntegrationTest {
     }
 
     @Test
+    void transactionReads_usePostgresOwnershipRelationsForSafeProjection() {
+        User sender = user("read-projection-sender");
+        User recipient = user("read-projection-recipient");
+        User operator = user("read-projection-operator", Role.OPERATOR);
+        Account source = account(sender, "5000.00");
+        Account destination = account(recipient, "0.00");
+        UUID previewId = preview(sender, source, destination, "PG read projection " + UUID.randomUUID());
+        TransactionResponse executed = transferService.execute(
+                new TransferExecuteRequest(previewId, UUID.randomUUID().toString()), sender.getEmail());
+
+        TransactionResponse senderDetail = transferService.getById(executed.id(), sender.getEmail());
+        TransactionResponse recipientHistory = transferService.getByAccount(
+                        destination.getId(), PageRequest.of(0, 20), recipient.getEmail())
+                .stream()
+                .filter(response -> response.id().equals(executed.id()))
+                .findFirst()
+                .orElseThrow();
+        TransactionResponse operatorDetail = transferService.getById(executed.id(), operator.getEmail());
+
+        assertThat(senderDetail.fromParty().exposure()).isEqualTo(AccountNumberExposure.FULL_OWNED);
+        assertThat(senderDetail.fromParty().accountNumberDisplay()).isEqualTo(source.getAccountNumber());
+        assertThat(senderDetail.toParty().exposure()).isEqualTo(AccountNumberExposure.MASKED_COUNTERPARTY);
+        assertThat(senderDetail.toParty().accountNumberDisplay()).doesNotContain(destination.getAccountNumber());
+        assertThat(senderDetail.direction()).isEqualTo(TransactionDirection.OUTGOING);
+
+        assertThat(recipientHistory.fromParty().exposure()).isEqualTo(AccountNumberExposure.MASKED_COUNTERPARTY);
+        assertThat(recipientHistory.toParty().exposure()).isEqualTo(AccountNumberExposure.FULL_OWNED);
+        assertThat(recipientHistory.toParty().accountNumberDisplay()).isEqualTo(destination.getAccountNumber());
+        assertThat(recipientHistory.direction()).isEqualTo(TransactionDirection.INCOMING);
+
+        assertThat(operatorDetail.fromParty().exposure()).isEqualTo(AccountNumberExposure.MASKED_COUNTERPARTY);
+        assertThat(operatorDetail.toParty().exposure()).isEqualTo(AccountNumberExposure.MASKED_COUNTERPARTY);
+        assertThat(operatorDetail.fromParty().accountNumberDisplay()).doesNotContain(source.getAccountNumber());
+        assertThat(operatorDetail.toParty().accountNumberDisplay()).doesNotContain(destination.getAccountNumber());
+        assertThat(operatorDetail.direction()).isEqualTo(TransactionDirection.UNKNOWN);
+    }
+
+    @Test
     void outboxFailure_rollsBackEntireExternalTransfer() {
         User owner = user("rollback-owner");
         Account source = account(owner, "5000.00");
@@ -268,12 +309,16 @@ class ExternalTransferPostgresIntegrationTest {
     }
 
     private User user(String label) {
+        return user(label, Role.USER);
+    }
+
+    private User user(String label, Role role) {
         String suffix = UUID.randomUUID().toString();
         return userRepository.saveAndFlush(User.builder()
                 .fullName("Postgres " + label)
                 .email(label + "-" + suffix + "@test.local")
                 .passwordHash("hashed")
-                .role(Role.USER)
+                .role(role)
                 .build());
     }
 

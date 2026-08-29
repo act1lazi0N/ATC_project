@@ -7,6 +7,8 @@ import com.actilazion.aries_transaction.account.domain.exception.AccountLimitExc
 import com.actilazion.aries_transaction.account.dto.AccountResponse;
 import com.actilazion.aries_transaction.account.dto.CreateAccountRequest;
 import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
+import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
+import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
@@ -68,6 +70,7 @@ public class AccountCreationAttemptService implements AccountCreationAttempt {
     public AccountResponse create(CreateAccountRequest request, String ownerEmail) {
         User owner = userRepository.findByEmailWithLock(ownerEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User", ownerEmail));
+        validateOwnerRole(owner);
         String requestHash = AccountCreationFingerprint.hash(request);
         var existing = requestRepository.findByUserIdAndIdempotencyKey(owner.getId(), request.idempotencyKey());
         if (existing.isPresent()) {
@@ -106,5 +109,11 @@ public class AccountCreationAttemptService implements AccountCreationAttempt {
 
     private String generateAccountNumber() {
         return accountNumberGenerator.generate();
+    }
+
+    private void validateOwnerRole(User owner) {
+        if (owner.getRole() != Role.USER && owner.getRole() != Role.MERCHANT) {
+            throw new ForbiddenOperationException("Only USER and MERCHANT may create financial accounts");
+        }
     }
 }

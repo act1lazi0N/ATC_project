@@ -1,15 +1,14 @@
 package com.actilazion.aries_transaction.account.dto;
 
 import com.actilazion.aries_transaction.account.domain.AccountType;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.databind.DeserializationContext;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.JsonMappingException;
-import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
-import com.fasterxml.jackson.databind.deser.std.StdDeserializer;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.JsonParser;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.exc.MismatchedInputException;
+import tools.jackson.databind.exc.UnrecognizedPropertyException;
+import tools.jackson.databind.deser.std.StdDeserializer;
 
-import java.io.IOException;
-import java.util.Iterator;
 import java.util.Set;
 
 /** Keeps the account-create boundary strict without changing other request DTOs. */
@@ -22,29 +21,32 @@ public final class CreateAccountRequestDeserializer extends StdDeserializer<Crea
     }
 
     @Override
-    public CreateAccountRequest deserialize(JsonParser parser, DeserializationContext context) throws IOException {
-        JsonNode node = parser.getCodec().readTree(parser);
+    public CreateAccountRequest deserialize(JsonParser parser, DeserializationContext context) throws JacksonException {
+        JsonNode node = context.readTree(parser);
         if (node == null || !node.isObject()) {
-            throw JsonMappingException.from(parser, "Create account request must be a JSON object");
+            throw MismatchedInputException.from(
+                    parser, CreateAccountRequest.class, "Create account request must be a JSON object");
         }
-        Iterator<String> fields = node.fieldNames();
-        while (fields.hasNext()) {
-            String field = fields.next();
+        for (String field : node.propertyNames()) {
             if (!KNOWN_FIELDS.contains(field)) {
                 throw UnrecognizedPropertyException.from(
                         parser, CreateAccountRequest.class, field, new java.util.ArrayList<>(KNOWN_FIELDS));
             }
         }
         return new CreateAccountRequest(
-                accountType(node, context),
-                text(node, "currency"),
-                text(node, "description"),
-                text(node, "idempotencyKey")
+                accountType(node, context, parser),
+                text(node, "currency", parser),
+                text(node, "description", parser),
+                text(node, "idempotencyKey", parser)
         );
     }
 
-    private AccountType accountType(JsonNode node, DeserializationContext context) throws IOException {
-        String value = text(node, "accountType");
+    private AccountType accountType(
+            JsonNode node,
+            DeserializationContext context,
+            JsonParser parser
+    ) throws JacksonException {
+        String value = text(node, "accountType", parser);
         if (value == null) {
             return null;
         }
@@ -56,8 +58,14 @@ public final class CreateAccountRequestDeserializer extends StdDeserializer<Crea
         }
     }
 
-    private String text(JsonNode node, String field) {
+    private String text(JsonNode node, String field, JsonParser parser) throws JacksonException {
         JsonNode value = node.get(field);
-        return value == null || value.isNull() ? null : value.isTextual() ? value.textValue() : value.asText();
+        if (value == null || value.isNull()) {
+            return null;
+        }
+        if (!value.isString()) {
+            throw MismatchedInputException.from(parser, String.class, field + " must be a string");
+        }
+        return value.stringValue();
     }
 }

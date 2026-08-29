@@ -13,6 +13,7 @@ import com.actilazion.aries_transaction.account.dto.AccountResponse;
 import com.actilazion.aries_transaction.account.dto.CreateAccountRequest;
 import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
 import com.actilazion.aries_transaction.audit.application.AuditLogService;
+import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
@@ -95,6 +96,17 @@ class AccountCreationAttemptServiceTest {
 
         assertThatThrownBy(() -> service.create(request, owner.getEmail()))
                 .isInstanceOf(AccountLimitExceededException.class);
+    }
+
+    @Test
+    void create_operationalRoleIsDeniedBeforeIdempotencyLookup() {
+        owner.setRole(Role.ADMIN);
+
+        assertThatThrownBy(() -> service.create(request, owner.getEmail()))
+                .isInstanceOf(ForbiddenOperationException.class);
+        verify(requestRepository, never()).findByUserIdAndIdempotencyKey(
+                owner.getId(), request.idempotencyKey());
+        verify(accountRepository, never()).saveAndFlush(org.mockito.ArgumentMatchers.any());
     }
 
     @Test

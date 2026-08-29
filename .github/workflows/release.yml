@@ -1,0 +1,143 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  GHCR_IMAGE: ghcr.io/act1lazi0n/atc_project
+
+jobs:
+  verify-release:
+    name: Verify release candidate
+    permissions:
+      contents: read
+      checks: read
+      packages: read
+      attestations: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      digest: ${{ steps.candidate.outputs.digest }}
+      image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.candidate.outputs.digest }}
+    steps:
+      - name: Checkout tag history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate SemVer tag and main ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo 'Release tags must use vMAJOR.MINOR.PATCH.' >&2
+            exit 1
+          fi
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - name: Require successful staging candidate check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          conclusion=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" \
+            --jq '.check_runs | map(select(.name == "Release candidate")) | sort_by(.completed_at) | last | .conclusion')
+          if [[ "$conclusion" != success ]]; then
+            echo "Release candidate check is not successful: ${conclusion:-missing}" >&2
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR for candidate verification
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve the existing immutable candidate
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_ref="$GHCR_IMAGE:sha-$GITHUB_SHA"
+          digest=$(docker buildx imagetools inspect "$candidate_ref" \
+            | sed -n 's/^Digest:[[:space:]]*//p' \
+            | head -n 1)
+          if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "No immutable candidate found for $GITHUB_SHA" >&2
+            exit 1
+          fi
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+
+      - name: Verify candidate provenance
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.candidate.outputs.digest }}
+        shell: bash
+        run: >-
+          gh attestation verify
+          "oci://$GHCR_IMAGE@$IMAGE_DIGEST"
+          --repo "$GITHUB_REPOSITORY"
+          --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/ci.yml"
+          --source-digest "$GITHUB_SHA"
+
+  deploy-production:
+    name: Approve and deploy production
+    needs: verify-release
+    uses: ./.github/workflows/deploy-compose.yml
+    with:
+      target_environment: production
+      image_ref: ${{ needs.verify-release.outputs.image-ref }}
+    secrets: inherit
+
+  promote-release:
+    name: Promote production tags
+    needs:
+      - verify-release
+      - deploy-production
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote the deployed digest without rebuilding
+        env:
+          IMAGE_REF: ${{ needs.verify-release.outputs.image-ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "$GHCR_IMAGE:$GITHUB_REF_NAME" \
+            --tag "$GHCR_IMAGE:latest" \
+            "$IMAGE_REF"
+          {
+            echo '### Production release promoted'
+            echo "- Tag: \`$GITHUB_REF_NAME\`"
+            echo "- Image: \`$IMAGE_REF\`"
+            echo '- Image was promoted after production deployment; it was not rebuilt.'
+          } >> "$GITHUB_STEP_SUMMARY"

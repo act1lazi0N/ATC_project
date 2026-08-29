@@ -3,6 +3,7 @@ package com.actilazion.aries_transaction.transaction.dto;
 import jakarta.validation.constraints.*;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 public record TransferRequest(
         @NotBlank(message = "fromAccountId is required")
@@ -12,8 +13,6 @@ public record TransferRequest(
         String toAccountId,
 
         @NotNull(message = "amount is required")
-        @DecimalMin(value = "1000", message = "Minimum transfer amount is 1000")
-        @Digits(integer = 16, fraction = 2, message = "Invalid amount format")
         BigDecimal amount,
 
         @NotBlank(message = "idempotencyKey is required")
@@ -24,6 +23,12 @@ public record TransferRequest(
         String currency,
 
         @Size(max = 255, message = "description too long")
-        String description
-)
-{ }
+        String description,
+
+        UUID previewId
+) {
+    public TransferRequest(String fromAccountId, String toAccountId, BigDecimal amount,
+                           String idempotencyKey, String currency, String description) {
+        this(fromAccountId, toAccountId, amount, idempotencyKey, currency, description, null);
+    }
+}

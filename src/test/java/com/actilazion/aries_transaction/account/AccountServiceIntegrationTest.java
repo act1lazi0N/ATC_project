@@ -2,7 +2,9 @@ package com.actilazion.aries_transaction.account;
 
 import com.actilazion.aries_transaction.account.application.AccountService;
 import com.actilazion.aries_transaction.account.application.AccountCreationAttemptService;
+import com.actilazion.aries_transaction.account.application.AccountCreationPolicyProperties;
 import com.actilazion.aries_transaction.account.application.AccountServiceImpl;
+import com.actilazion.aries_transaction.audit.application.AuditLogService;
 import com.actilazion.aries_transaction.account.domain.AccountType;
 import com.actilazion.aries_transaction.account.dto.CreateAccountRequest;
 import com.actilazion.aries_transaction.account.domain.exception.InternalAccountTypeException;
@@ -21,7 +23,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest(showSql = false)
 @ActiveProfiles("test")
-@Import({AccountServiceImpl.class, AccountCreationAttemptService.class})
+@Import({
+        AccountServiceImpl.class,
+        AccountCreationAttemptService.class,
+        AccountCreationPolicyProperties.class,
+        AuditLogService.class
+})
 class AccountServiceIntegrationTest {
     @Autowired AccountService accountService;
     @Autowired UserRepository userRepository;
@@ -41,7 +48,7 @@ class AccountServiceIntegrationTest {
     @Test
     @DisplayName("User account creation rejects internal account types")
     void create_internalAccountType_throwsException() {
-        var request = new CreateAccountRequest(AccountType.CLEARING, "VND", null);
+        var request = new CreateAccountRequest(AccountType.CLEARING, "VND", null, "account-key-0001");
 
         assertThatThrownBy(() -> accountService.create(request, OWNER_EMAIL))
                 .isInstanceOf(InternalAccountTypeException.class);

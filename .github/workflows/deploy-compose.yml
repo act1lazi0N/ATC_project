@@ -1,0 +1,166 @@
+name: Deploy Compose
+
+on:
+  workflow_call:
+    inputs:
+      target_environment:
+        description: GitHub Environment containing deployment secrets
+        required: true
+        type: string
+      image_ref:
+        description: Immutable OCI image reference including sha256 digest
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ inputs.target_environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ inputs.target_environment }}
+    environment:
+      name: ${{ inputs.target_environment }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Validate immutable deployment input
+        env:
+          IMAGE_REF: ${{ inputs.image_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$IMAGE_REF" =~ ^ghcr\.io/act1lazi0n/atc_project@sha256:[0-9a-f]{64}$ ]]; then
+            echo 'Deployment requires the canonical GHCR image pinned by sha256 digest.' >&2
+            exit 1
+          fi
+
+      - name: Configure hardened SSH client
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_SSH_PRIVATE_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
+
+      - name: Deploy exact image and run read-safe smoke checks
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          IMAGE_REF: ${{ inputs.image_ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_PATH"
+          DEPLOY_PORT="${DEPLOY_PORT:-22}"
+          ssh -i "$HOME/.ssh/deploy_key" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 \
+            -p "$DEPLOY_PORT" \
+            "$DEPLOY_USER@$DEPLOY_HOST" \
+            'bash -s --' "$IMAGE_REF" "$DEPLOY_PATH" <<'REMOTE_SCRIPT'
+          set -Eeuo pipefail
+          image_ref=$1
+          deploy_path=$2
+          cd "$deploy_path"
+
+          state_dir=.deploy
+          current_ref_file="$state_dir/current-image"
+          previous_ref_file="$state_dir/previous-image"
+          mkdir -p "$state_dir"
+
+          previous_ref=''
+          if [[ -f "$current_ref_file" ]]; then
+            previous_ref=$(tail -n 1 "$current_ref_file")
+            cp "$current_ref_file" "$previous_ref_file"
+          elif docker inspect transfer_app >/dev/null 2>&1; then
+            previous_ref=$(docker inspect --format '{{.Config.Image}}' transfer_app)
+            printf '%s\n' "$previous_ref" > "$previous_ref_file"
+          fi
+
+          rollback() {
+            exit_code=$?
+            trap - ERR
+            set +e
+            echo 'Deployment failed; collecting app logs and restoring the previous image.' >&2
+            APP_IMAGE="$image_ref" docker compose logs --no-color --tail=200 app >&2
+            if [[ -n "$previous_ref" && -f "$previous_ref_file" ]]; then
+              cp "$previous_ref_file" "$current_ref_file"
+              APP_IMAGE="$previous_ref" docker compose pull app
+              APP_IMAGE="$previous_ref" docker compose up -d --no-deps --force-recreate app
+            else
+              APP_IMAGE="$image_ref" docker compose stop app
+            fi
+            exit "$exit_code"
+          }
+          trap rollback ERR
+
+          APP_IMAGE="$image_ref" docker compose config --quiet
+          APP_IMAGE="$image_ref" docker compose pull app
+          APP_IMAGE="$image_ref" docker compose up -d --no-deps --force-recreate app
+
+          container_id=$(APP_IMAGE="$image_ref" docker compose ps -q app)
+          test -n "$container_id"
+          healthy=false
+          for _ in $(seq 1 60); do
+            status=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_id")
+            if [[ "$status" == healthy ]]; then
+              healthy=true
+              break
+            fi
+            if [[ "$status" == unhealthy || "$status" == exited || "$status" == dead ]]; then
+              break
+            fi
+            sleep 3
+          done
+          [[ "$healthy" == true ]]
+
+          docker exec "$container_id" curl -fsS http://localhost:8080/actuator/health | grep -q '"status":"UP"'
+          protected_status=$(docker exec "$container_id" curl -sS -o /dev/null -w '%{http_code}' http://localhost:8080/api/v1/accounts)
+          [[ "$protected_status" == 401 ]]
+
+          trap - ERR
+          printf '%s\n' "$image_ref" > "$current_ref_file"
+          echo "Deployed $image_ref"
+          REMOTE_SCRIPT
+
+      - name: Record deployment receipt
+        env:
+          IMAGE_REF: ${{ inputs.image_ref }}
+          TARGET_ENVIRONMENT: ${{ inputs.target_environment }}
+        shell: bash
+        run: |
+          {
+            echo '### Compose deployment succeeded'
+            echo "- Environment: \`$TARGET_ENVIRONMENT\`"
+            echo "- Image: \`$IMAGE_REF\`"
+            echo '- Smoke: actuator UP; unauthenticated accounts request returned 401.'
+            echo '- Financial mutations submitted: none.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove SSH material
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f "$HOME/.ssh/deploy_key" ]]; then
+            shred -u "$HOME/.ssh/deploy_key"
+          fi
+          rm -f "$HOME/.ssh/known_hosts"

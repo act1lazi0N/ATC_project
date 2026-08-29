@@ -5,6 +5,9 @@ import com.actilazion.aries_transaction.identity.dto.AuthResponse;
 import com.actilazion.aries_transaction.identity.dto.LoginRequest;
 import com.actilazion.aries_transaction.identity.dto.RegisterRequest;
 import com.actilazion.aries_transaction.identity.infrastructure.RefreshSessionRepository;
+import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
+import com.actilazion.aries_transaction.identity.domain.RefreshSessionRevocationReason;
+import com.actilazion.aries_transaction.support.PostgresIntegrationTestSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -15,12 +18,15 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @SpringBootTest
 @ActiveProfiles("test")
-class RefreshSessionIntegrationTest {
+class RefreshSessionIntegrationTest extends PostgresIntegrationTestSupport {
     @Autowired
     AuthService authService;
 
     @Autowired
     RefreshSessionRepository refreshSessionRepository;
+
+    @Autowired
+    UserRepository userRepository;
 
     @Test
     void refresh_rotatesToken_andOldTokenIsRejected() {
@@ -84,6 +90,32 @@ class RefreshSessionIntegrationTest {
                 .hasMessage("Unauthorized");
         assertThat(authService.refresh(secondLogin.refreshToken()).refreshToken())
                 .isNotBlank();
+    }
+
+    @Test
+    void disabledUserRefresh_revokesEveryIndependentFamily() {
+        RegisterRequest request = new RegisterRequest(
+                "Disabled Refresh User",
+                "refresh-disabled-" + System.nanoTime() + "@test.local",
+                "password-123456");
+        AuthResponse firstFamily = authService.register(request);
+        AuthResponse secondFamily = authService.login(new LoginRequest(request.email(), request.password()));
+        var user = userRepository.findById(firstFamily.user().id()).orElseThrow();
+        user.setIsActive(false);
+        userRepository.saveAndFlush(user);
+
+        assertThatThrownBy(() -> authService.refresh(firstFamily.refreshToken()))
+                .hasMessage("Unauthorized");
+        assertThatThrownBy(() -> authService.refresh(secondFamily.refreshToken()))
+                .hasMessage("Unauthorized");
+
+        assertThat(refreshSessionRepository.findAllByUserId(firstFamily.user().id()))
+                .hasSize(2)
+                .allSatisfy(session -> {
+                    assertThat(session.getRevokedAt()).isNotNull();
+                    assertThat(session.getRevokedReason())
+                            .isEqualTo(RefreshSessionRevocationReason.ADMIN_REVOKED);
+                });
     }
 
     private AuthResponse register() {

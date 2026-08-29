@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import com.actilazion.aries_transaction.account.domain.AccountStatus;
 
 @Repository
 public interface AccountRepository extends JpaRepository<Account, UUID> {
@@ -20,9 +21,9 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     @Query("SELECT a FROM Account a WHERE a.id = :id")
     Optional<Account> findByIdWithLock(@Param("id") UUID id);
 
-    boolean existsByAccountNumber(String accountNumber);
-
     Optional<Account> findByAccountNumber(String accountNumber);
 
     List<Account> findAllByUserId(UUID userId);
+
+    long countByUserIdAndStatus(UUID userId, AccountStatus status);
 }

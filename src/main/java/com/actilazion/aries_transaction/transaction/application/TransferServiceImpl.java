@@ -14,9 +14,11 @@ import com.actilazion.aries_transaction.outbox.application.OutboxEventService;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecord;
 import com.actilazion.aries_transaction.transaction.domain.IdempotencyRecordStatus;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
+import com.actilazion.aries_transaction.transaction.domain.TransferPreview;
 import com.actilazion.aries_transaction.transaction.domain.TransactionOperation;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStateGuard;
 import com.actilazion.aries_transaction.transaction.domain.TransactionStatus;
+import com.actilazion.aries_transaction.transaction.domain.TransferAmountPolicy;
 import com.actilazion.aries_transaction.transaction.domain.exception.AccountNotActiveException;
 import com.actilazion.aries_transaction.transaction.domain.exception.CurrencyMismatchException;
 import com.actilazion.aries_transaction.transaction.domain.exception.DuplicateTransferException;
@@ -25,10 +27,13 @@ import com.actilazion.aries_transaction.transaction.domain.exception.Insufficien
 import com.actilazion.aries_transaction.common.exception.ForbiddenOperationException;
 import com.actilazion.aries_transaction.transaction.domain.exception.RefundAmountExceededException;
 import com.actilazion.aries_transaction.transaction.domain.exception.SelfTransferException;
+import com.actilazion.aries_transaction.transaction.domain.exception.TransferPreviewUnavailableException;
 import com.actilazion.aries_transaction.transaction.dto.RefundRequest;
 import com.actilazion.aries_transaction.transaction.dto.ReversalRequest;
 import com.actilazion.aries_transaction.transaction.dto.TransactionResponse;
 import com.actilazion.aries_transaction.transaction.dto.TransferRequest;
+import com.actilazion.aries_transaction.transaction.dto.TransferExecuteRequest;
+import com.actilazion.aries_transaction.transaction.infrastructure.TransferPreviewRepository;
 import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,20 +58,75 @@ public class TransferServiceImpl implements TransferService {
     private final IdempotencyService idempotencyService;
     private final OutboxEventService outboxEventService;
     private final LedgerService ledgerService;
+    private final TransferPreviewRepository transferPreviewRepository;
+
+    @Override
+    @Transactional
+    public TransactionResponse execute(TransferExecuteRequest request, String initiatorEmail) {
+        User initiator = lockInitiator(initiatorEmail);
+        TransferPreview preview = transferPreviewRepository.findByIdWithLock(request.previewId())
+                .orElseThrow(() -> new ResourceNotFoundException("Transfer preview", request.previewId()));
+        if (!preview.getInitiator().getId().equals(initiator.getId())) {
+            throw new ForbiddenOperationException("Caller is not authorized for this transfer preview");
+        }
+        TransferRequest transferRequest = new TransferRequest(
+                preview.getSourceAccount().getId().toString(),
+                preview.getDestinationAccount().getId().toString(),
+                TransferAmountPolicy.normalize(preview.getAmount()), request.idempotencyKey(),
+                preview.getCurrency(), preview.getDescription(), preview.getId());
+        var existing = idempotencyService.findTransferRecord(transferRequest, initiatorEmail);
+        if (existing.isPresent()) {
+            if (!idempotencyService.matchesRequest(existing.get(), transferRequest)) {
+                throw new IdempotencyConflictException(request.idempotencyKey());
+            }
+            return idempotencyService.responseFromPayload(existing.get(), request.idempotencyKey());
+        }
+        if (preview.getConsumedAt() != null) {
+            throw new TransferPreviewUnavailableException(TransferPreviewUnavailableException.Reason.CONSUMED);
+        }
+        if (!preview.getExpiresAt().isAfter(OffsetDateTime.now())) {
+            throw new TransferPreviewUnavailableException(TransferPreviewUnavailableException.Reason.EXPIRED);
+        }
+        TransactionResponse response = createTransfer(transferRequest, initiator, initiatorEmail);
+        preview.setConsumedAt(OffsetDateTime.now());
+        transferPreviewRepository.save(preview);
+        return response;
+    }
 
     @Override
     @Transactional
     public TransactionResponse transfer(TransferRequest request, String initiatorEmail) {
+        TransferRequest normalizedRequest = normalizeTransferRequest(request);
         User initiator = lockInitiator(initiatorEmail);
-        var existing = idempotencyService.findTransferRecord(request, initiatorEmail);
+        var existing = idempotencyService.findTransferRecord(normalizedRequest, initiatorEmail);
         if (existing.isPresent()) {
-            return responseForIdempotentRetry(existing.get(), request);
+            return responseForIdempotentRetry(existing.get(), normalizedRequest);
         }
 
+        return createTransfer(normalizedRequest, initiator, initiatorEmail);
+    }
+
+    private TransactionResponse createTransfer(
+            TransferRequest request,
+            User initiator,
+            String initiatorEmail
+    ) {
         IdempotencyRecord record = idempotencyService.createProcessingRecord(request, initiatorEmail);
         TransactionResponse response = doTransfer(request, initiator);
         completeIdempotencyRecord(record, response);
         return response;
+    }
+
+    private TransferRequest normalizeTransferRequest(TransferRequest request) {
+        return new TransferRequest(
+                request.fromAccountId(),
+                request.toAccountId(),
+                TransferAmountPolicy.normalize(request.amount()),
+                request.idempotencyKey(),
+                request.currency(),
+                request.description(),
+                request.previewId()
+        );
     }
 
     @Override
@@ -346,8 +406,9 @@ public class TransferServiceImpl implements TransferService {
     public TransactionResponse getById(UUID txId, String requesterEmail) {
         Transaction tx = transactionRepository.findById(txId)
                 .orElseThrow(() -> new ResourceNotFoundException("Transaction", txId));
-        assertCanReadTransaction(tx, requesterEmail);
-        return TransactionResponse.from(tx);
+        User requester = findRequester(requesterEmail);
+        assertCanReadTransaction(tx, requester);
+        return TransactionReadProjection.project(tx, requester, null);
     }
 
     @Override
@@ -355,10 +416,11 @@ public class TransferServiceImpl implements TransferService {
     public Page<TransactionResponse> getByAccount(UUID accountId, Pageable pageable, String requesterEmail) {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResourceNotFoundException("Account", accountId));
-        assertCanReadAccount(account, requesterEmail);
+        User requester = findRequester(requesterEmail);
+        assertCanReadAccount(account, requester);
         return transactionRepository
                 .findAllByAccountId(accountId, pageable)
-                .map(TransactionResponse::from);
+                .map(transaction -> TransactionReadProjection.project(transaction, requester, accountId));
     }
 
     private Account lockAccount(UUID accountId) {
@@ -382,30 +444,37 @@ public class TransferServiceImpl implements TransferService {
     private record AccountPair(Account fromAccount, Account toAccount) {
     }
 
-    private void assertCanReadTransaction(Transaction tx, String requesterEmail) {
-        if (isPrivileged(requesterEmail)
-                || isAccountOwner(tx.getFromAccount(), requesterEmail)
-                || isAccountOwner(tx.getToAccount(), requesterEmail)) {
+    private void assertCanReadTransaction(Transaction tx, User requester) {
+        if (isPrivileged(requester)
+                || isAccountOwner(tx.getFromAccount(), requester)
+                || isAccountOwner(tx.getToAccount(), requester)) {
             return;
         }
         throw new ForbiddenOperationException("Not allowed to read this transaction");
     }
 
-    private void assertCanReadAccount(Account account, String requesterEmail) {
-        if (isPrivileged(requesterEmail) || isAccountOwner(account, requesterEmail)) {
+    private void assertCanReadAccount(Account account, User requester) {
+        if (isPrivileged(requester) || isAccountOwner(account, requester)) {
             return;
         }
         throw new ForbiddenOperationException("Not allowed to read this account history");
     }
 
-    private boolean isPrivileged(String requesterEmail) {
-        return userRepository.findByEmail(requesterEmail)
-                .map(user -> user.getRole() == Role.ADMIN || user.getRole() == Role.OPERATOR)
-                .orElse(false);
+    private boolean isPrivileged(User requester) {
+        return requester.getRole() == Role.ADMIN || requester.getRole() == Role.OPERATOR;
     }
 
-    private boolean isAccountOwner(Account account, String requesterEmail) {
-        return account.getUser().getEmail().equals(requesterEmail);
+    private boolean isAccountOwner(Account account, User requester) {
+        return account != null && account.getUser() != null
+                && account.getUser().getId() != null
+                && requester != null
+                && requester.getId() != null
+                && account.getUser().getId().equals(requester.getId());
+    }
+
+    private User findRequester(String requesterEmail) {
+        return userRepository.findByEmail(requesterEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User", requesterEmail));
     }
 
     private Transaction lockTransaction(UUID transactionId) {

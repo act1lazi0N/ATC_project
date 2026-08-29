@@ -12,7 +12,7 @@ public class RateLimitExceededException extends AppException {
     }
 
     public RateLimitExceededException(long retryAfterSeconds) {
-        super("Too many authentication requests", HttpStatus.TOO_MANY_REQUESTS);
+        super("Too many requests", HttpStatus.TOO_MANY_REQUESTS);
         this.retryAfterSeconds = Math.max(1, retryAfterSeconds);
     }
 

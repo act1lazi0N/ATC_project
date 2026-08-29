@@ -16,6 +16,7 @@ import com.actilazion.aries_transaction.identity.dto.RegisterRequest;
 import com.actilazion.aries_transaction.identity.dto.UserResponse;
 import com.actilazion.aries_transaction.identity.infrastructure.RefreshSessionRepository;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
+import com.actilazion.aries_transaction.identity.domain.exception.UnauthorizedException;
 import com.actilazion.aries_transaction.common.redis.SecurityKeyHasher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -171,11 +172,16 @@ public class AuthServiceImpl implements AuthService {
             }
             throw unauthorized();
         }
-        if (current.getExpiresAt().isBefore(now) || !Boolean.TRUE.equals(user.getIsActive())) {
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            refreshSessionRepository.revokeActiveByUserId(
+                    user.getId(), now, RefreshSessionRevocationReason.ADMIN_REVOKED);
+            identityAuditService.record(
+                    IdentityAuditEventType.REFRESH_REJECTED, user.getId(), null, ipAddress, Map.of());
+            throw unauthorized();
+        }
+        if (current.getExpiresAt().isBefore(now)) {
             current.setRevokedAt(now);
-            current.setRevokedReason(Boolean.TRUE.equals(user.getIsActive())
-                    ? RefreshSessionRevocationReason.EXPIRED
-                    : RefreshSessionRevocationReason.ADMIN_REVOKED);
+            current.setRevokedReason(RefreshSessionRevocationReason.EXPIRED);
             identityAuditService.record(IdentityAuditEventType.REFRESH_REJECTED, user.getId(), null, ipAddress, Map.of());
             throw unauthorized();
         }
@@ -251,7 +257,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private AppException unauthorized() {
-        return new AppException("Unauthorized", HttpStatus.UNAUTHORIZED) {};
+        return new UnauthorizedException();
     }
 
     private boolean recordFailedLogin(User user, String email, OffsetDateTime now) {

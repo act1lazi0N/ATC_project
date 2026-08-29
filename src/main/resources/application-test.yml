@@ -48,6 +48,10 @@ security:
     allowed-origins: http://localhost:3000
 
 app:
+  transfer:
+    preview:
+      minimum-response-millis: 0
+      cleanup-enabled: false
   outbox:
     worker-enabled: false
     publisher: noop

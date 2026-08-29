@@ -27,7 +27,9 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(
                         ex.getHttpStatus().value(),
                         ex.getMessage(),
-                        null
+                        null,
+                        errorCode(ex),
+                        requestId()
                 ));
     }
 
@@ -44,7 +46,9 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(
                         HttpStatus.BAD_REQUEST.value(),
                         "Validation failed",
-                        fieldErrors
+                        fieldErrors,
+                        "VALIDATION_ERROR",
+                        requestId()
                 ));
     }
 
@@ -55,7 +59,9 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(
                         ex.getHttpStatus().value(),
                         ex.getMessage(),
-                        null
+                        null,
+                        "RATE_LIMITED",
+                        requestId()
                 ));
     }
 
@@ -65,7 +71,9 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(
                         HttpStatus.UNAUTHORIZED.value(),
                         "Unauthorized",
-                        null
+                        null,
+                        "UNAUTHORIZED",
+                        requestId()
                 ));
     }
 
@@ -75,7 +83,9 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(
                         HttpStatus.FORBIDDEN.value(),
                         "Access denied",
-                        null
+                        null,
+                        "FORBIDDEN",
+                        requestId()
                 ));
     }
 
@@ -89,7 +99,9 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(
                         HttpStatus.BAD_REQUEST.value(),
                         badRequestMessage(ex),
-                        null
+                        null,
+                        "BAD_REQUEST",
+                        requestId()
                 ));
     }
 
@@ -100,7 +112,9 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse(
                         HttpStatus.INTERNAL_SERVER_ERROR.value(),
                         "An unexpected error occurred.",
-                        null
+                        null,
+                        "INTERNAL_ERROR",
+                        requestId()
                 ));
     }
 
@@ -118,15 +132,32 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(status).header("Cache-Control", NO_STORE);
     }
 
+    private String errorCode(AppException ex) {
+        return ex.getClass().getSimpleName()
+                .replaceAll("Exception$", "")
+                .replaceAll("([a-z])([A-Z])", "$1_$2")
+                .toUpperCase(java.util.Locale.ROOT);
+    }
+
+    private String requestId() {
+        return java.util.UUID.randomUUID().toString();
+    }
+
     public record ErrorResponse(
             int status,
             String message,
             Map<String, String> errors,
-            OffsetDateTime timestamp
+            OffsetDateTime timestamp,
+            String code,
+            String requestId
     ) {
         // Convenience constructor - injects the current timestamp.
         public ErrorResponse(int status, String message, Map<String, String> errors) {
-            this(status, message, errors, OffsetDateTime.now());
+            this(status, message, errors, OffsetDateTime.now(), "ERROR", java.util.UUID.randomUUID().toString());
+        }
+
+        public ErrorResponse(int status, String message, Map<String, String> errors, String code, String requestId) {
+            this(status, message, errors, OffsetDateTime.now(), code, requestId);
         }
     }
 }

@@ -10,6 +10,9 @@ import com.actilazion.aries_transaction.identity.application.AuthenticatedUserPr
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
+import com.actilazion.aries_transaction.transaction.domain.TransferPreview;
+import com.actilazion.aries_transaction.transaction.domain.TransferPreviewMode;
+import com.actilazion.aries_transaction.transaction.infrastructure.TransferPreviewRepository;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -26,6 +29,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.Date;
 import java.util.UUID;
 
@@ -41,6 +45,7 @@ class SecurityRegressionMatrixTest {
 
     @Autowired UserRepository userRepository;
     @Autowired AccountRepository accountRepository;
+    @Autowired TransferPreviewRepository transferPreviewRepository;
     @Autowired JwtService jwtService;
     @Autowired JwtConfig jwtConfig;
 
@@ -95,11 +100,21 @@ class SecurityRegressionMatrixTest {
         User caller = user(Role.USER, true);
         Account foreign = account(owner, "600000000001");
         Account own = account(caller, "600000000002");
+        TransferPreview foreignPreview = transferPreviewRepository.save(TransferPreview.builder()
+                .initiator(owner)
+                .sourceAccount(foreign)
+                .destinationAccount(own)
+                .mode(TransferPreviewMode.EXTERNAL)
+                .amount(new BigDecimal("1000.00"))
+                .fee(BigDecimal.ZERO.setScale(2))
+                .currency("VND")
+                .expiresAt(OffsetDateTime.now().plusMinutes(5))
+                .build());
         String token = jwtService.generateToken(AuthenticatedUserPrincipal.from(caller));
 
         HttpResponse<String> transfer = post("/api/v1/transfers", token, """
-                {"fromAccountId":"%s","toAccountId":"%s","amount":1000,"currency":"VND","idempotencyKey":"%s"}
-                """.formatted(foreign.getId(), own.getId(), UUID.randomUUID()));
+                {"previewId":"%s","idempotencyKey":"%s"}
+                """.formatted(foreignPreview.getId(), UUID.randomUUID()));
         HttpResponse<String> history = get("/api/v1/transfers/account/" + foreign.getId(), token);
 
         assertThat(transfer.statusCode()).isEqualTo(403);

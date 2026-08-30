@@ -41,7 +41,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if grep -R --line-number --fixed-strings 'pull_request_target:' .github/workflows; then
+          # Match pull_request_target: as a YAML key (line starts with optional whitespace + key name + colon)
+          # This regex anchors to line-beginning to avoid matching this very grep command
+          if grep -R --line-number -E '^\s*pull_request_target\s*:' .github/workflows 2>/dev/null | grep -v 'Enforce immutable action references'; then
             echo 'pull_request_target is forbidden for workflows that execute repository code.' >&2
             exit 1
           fi

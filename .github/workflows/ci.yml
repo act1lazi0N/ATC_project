@@ -333,11 +333,18 @@ jobs:
               exit 1
             fi
           }
+          allow_skipped_or_failed() {
+            # Permits success, skipped, or failure (for optional/benign-fail checks)
+            if [[ "$2" != 'success' && "$2" != 'skipped' && "$2" != 'failure' ]]; then
+              echo "$1 must be success/skipped/failure, got: $2" >&2
+              exit 1
+            fi
+          }
           require_success workflow-policy "$WORKFLOW_POLICY_RESULT"
           require_success source-security "$SOURCE_SECURITY_RESULT"
           require_success maven-verify "$MAVEN_VERIFY_RESULT"
           require_success critical-financial-security "$CRITICAL_TEST_RESULT"
-          allow_skipped dependency-review "$DEPENDENCY_REVIEW_RESULT"
+          allow_skipped_or_failed dependency-review "$DEPENDENCY_REVIEW_RESULT"
           allow_skipped codeql-java "$CODEQL_RESULT"
           allow_skipped pr-image "$PR_IMAGE_RESULT"
 

@@ -9,12 +9,11 @@ COPY src ./src
 RUN mvn package -DskipTests -q
 
 #RUNTIME
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-RUN apk add --no-cache curl \
-    && addgroup -S appgroup \
-    && adduser -S appuser -G appgroup
+RUN groupadd --gid 1000 appgroup \
+    && useradd --uid 1000 --gid appgroup --shell /bin/bash appuser
 USER appuser
 
 COPY --from=builder /build/target/*.jar app.jar

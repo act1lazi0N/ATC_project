@@ -32,6 +32,8 @@
         <springdoc.version>3.0.3</springdoc.version>
         <testcontainers.version>1.21.4</testcontainers.version>
         <commons-compress.version>1.28.0</commons-compress.version>
+        <!-- Override embedded Tomcat to fix CVE-2026-41293, CVE-2026-43512, CVE-2026-43515 -->
+        <tomcat.version>11.0.22</tomcat.version>
         <argLine/>
     </properties>
     <dependencies>
@@ -39,6 +41,13 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Pin Tomcat to a patched release (CVE-2026-41293 / 43512 / 43515). -->
+        <dependency>
+            <groupId>org.apache.tomcat.embed</groupId>
+            <artifactId>tomcat-embed-core</artifactId>
+            <version>${tomcat.version}</version>
         </dependency>
 
         <!-- Security -->

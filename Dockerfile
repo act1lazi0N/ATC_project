@@ -13,11 +13,8 @@ RUN mvn package -DskipTests -q
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
-# Use a dedicated high UID/GID to avoid colliding with accounts supplied by
-# the base image, such as Ubuntu's UID/GID 1000 user.
-RUN groupadd --gid 10001 appgroup \
-    && useradd --uid 10001 --gid appgroup --no-create-home \
-      --shell /usr/sbin/nologin appuser
+RUN addgroup -g 10001 appgroup \
+    && adduser -u 10001 -G appgroup -s /sbin/nologin -D appuser
 USER appuser
 
 COPY --from=builder /build/target/*.jar app.jar

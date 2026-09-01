@@ -9,7 +9,8 @@ COPY src ./src
 RUN mvn package -DskipTests -q
 
 #RUNTIME
-FROM eclipse-temurin:21-jre
+# Use Alpine-based image for significantly fewer vulnerabilities
+FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 
 # Use a dedicated high UID/GID to avoid colliding with accounts supplied by

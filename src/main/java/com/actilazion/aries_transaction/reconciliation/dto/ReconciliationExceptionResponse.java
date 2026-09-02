@@ -6,13 +6,15 @@ import com.actilazion.aries_transaction.reconciliation.domain.ReconciliationExce
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import tools.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.ser.std.ToStringSerializer;
 
 public record ReconciliationExceptionResponse(
         UUID id,
         ReconciliationExceptionType exceptionType,
         UUID transactionId,
-        BigDecimal sourceAmount,
-        BigDecimal reportingAmount,
+        @JsonSerialize(using = ToStringSerializer.class) BigDecimal sourceAmount,
+        @JsonSerialize(using = ToStringSerializer.class) BigDecimal reportingAmount,
         String sourceStatus,
         String reportingStatus,
         String details,

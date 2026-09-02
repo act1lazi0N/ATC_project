@@ -33,6 +33,23 @@ public class IdentityAuditService {
                 .build());
     }
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordCustomerAdministration(
+            IdentityAuditEventType eventType,
+            UUID targetUserId,
+            UUID actorUserId,
+            String ipAddress,
+            Map<String, Object> metadata
+    ) {
+        repository.save(IdentityAuditLog.builder()
+                .userId(targetUserId)
+                .actorUserId(actorUserId)
+                .eventType(eventType)
+                .ipAddress(ipAddress)
+                .metadata(metadata == null ? Map.of() : Map.copyOf(metadata))
+                .build());
+    }
+
     private String hash(String value) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")

@@ -35,6 +35,9 @@ public class IdentityAuditLog {
     @Column(name = "user_id")
     private UUID userId;
 
+    @Column(name = "actor_user_id")
+    private UUID actorUserId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "event_type", nullable = false, length = 40)
     private IdentityAuditEventType eventType;

@@ -6,16 +6,18 @@ import com.actilazion.aries_transaction.settlement.domain.SettlementItemType;
 
 import java.math.BigDecimal;
 import java.util.UUID;
+import tools.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.ser.std.ToStringSerializer;
 
 public record SettlementItemResponse(
         UUID id,
         UUID transactionId,
         UUID receiverAccountId,
-        BigDecimal grossAmount,
-        BigDecimal feeAmount,
-        BigDecimal netAmount,
-        BigDecimal platformRevenue,
-        BigDecimal receiverPayable,
+        @JsonSerialize(using = ToStringSerializer.class) BigDecimal grossAmount,
+        @JsonSerialize(using = ToStringSerializer.class) BigDecimal feeAmount,
+        @JsonSerialize(using = ToStringSerializer.class) BigDecimal netAmount,
+        @JsonSerialize(using = ToStringSerializer.class) BigDecimal platformRevenue,
+        @JsonSerialize(using = ToStringSerializer.class) BigDecimal receiverPayable,
         SettlementItemType itemType,
         String currency,
         PayoutStatus payoutStatus

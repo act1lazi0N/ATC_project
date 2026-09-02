@@ -5,6 +5,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,7 +18,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Repository
-public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
+public interface TransactionRepository extends JpaRepository<Transaction, UUID>, JpaSpecificationExecutor<Transaction> {
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT t FROM Transaction t WHERE t.id = :id")
@@ -34,6 +35,33 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
             @Param("accountId") UUID accountId,
         Pageable pageable
     );
+
+    @Query("""
+    SELECT t FROM Transaction t
+    WHERE t.fromAccount.user.id = :userId
+       OR t.toAccount.user.id = :userId
+    ORDER BY t.createdAt DESC, t.id DESC
+    """)
+    Page<Transaction> findRecentByUserId(@Param("userId") UUID userId, Pageable pageable);
+
+    @Query("""
+    SELECT DISTINCT t FROM Transaction t
+    JOIN FETCH t.fromAccount fromAccount
+    JOIN FETCH fromAccount.user
+    JOIN FETCH t.toAccount toAccount
+    JOIN FETCH toAccount.user
+    WHERE (fromAccount.user.id = :userId OR toAccount.user.id = :userId)
+      AND t.createdAt >= :from
+      AND t.createdAt < :to
+    ORDER BY t.createdAt ASC, t.id ASC
+    """)
+    List<Transaction> findDashboardTransactions(
+            @Param("userId") UUID userId,
+            @Param("from") OffsetDateTime from,
+            @Param("to") OffsetDateTime to
+    );
+
+    List<Transaction> findAllByCreatedAtGreaterThanEqual(OffsetDateTime from);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

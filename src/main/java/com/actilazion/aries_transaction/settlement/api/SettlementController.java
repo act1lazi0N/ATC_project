@@ -5,6 +5,8 @@ import com.actilazion.aries_transaction.settlement.application.SettlementService
 import com.actilazion.aries_transaction.common.redis.DuplicateSuppressionService;
 import com.actilazion.aries_transaction.settlement.dto.CreateSettlementBatchRequest;
 import com.actilazion.aries_transaction.settlement.dto.SettlementBatchResponse;
+import com.actilazion.aries_transaction.settlement.dto.SettlementBatchSummaryResponse;
+import com.actilazion.aries_transaction.common.dto.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,6 +22,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.UUID;
 
@@ -31,6 +36,23 @@ import java.util.UUID;
 public class SettlementController {
     private final SettlementService settlementService;
     private final DuplicateSuppressionService duplicateSuppression;
+
+    @GetMapping("/batches")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")
+    @Operation(summary = "List settlement batches")
+    public ResponseEntity<ApiResponse<PageResponse<SettlementBatchSummaryResponse>>> getBatches(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                "Settlement batches",
+                settlementService.getBatches(
+                        PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, 100),
+                                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"))),
+                        userDetails.getUsername())
+        ));
+    }
 
     @PostMapping("/batches")
     @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")

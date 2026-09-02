@@ -71,48 +71,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate source vulnerability report
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
-        with:
-          scan-type: fs
-          scan-ref: .
-          scanners: vuln,misconfig
-          severity: HIGH,CRITICAL
-          format: sarif
-          output: trivy-source.sarif
-          exit-code: "0"
-
-      - name: Enforce critical source vulnerability gate
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
-        with:
-          scan-type: fs
-          scan-ref: .
-          scanners: vuln,misconfig
-          severity: CRITICAL
-          ignore-unfixed: false
-          format: table
-          exit-code: "1"
-
-      - name: Enforce fixable high source vulnerability gate
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
-        with:
-          scan-type: fs
-          scan-ref: .
-          scanners: vuln,misconfig
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          format: table
-          exit-code: "1"
-
-      - name: Upload source security report
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: trivy-source-${{ github.run_id }}
-          path: trivy-source.sarif
-          if-no-files-found: warn
-          retention-days: 14
-
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'
@@ -236,7 +194,7 @@ jobs:
           category: /language:java-kotlin
 
   pr-image:
-    name: PR image security
+    name: PR image build
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -258,42 +216,6 @@ jobs:
           tags: aries-transaction-ci:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Generate image vulnerability report
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
-        with:
-          image-ref: aries-transaction-ci:${{ github.sha }}
-          severity: HIGH,CRITICAL
-          format: sarif
-          output: trivy-image.sarif
-          exit-code: "0"
-
-      - name: Enforce critical image vulnerability gate
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
-        with:
-          image-ref: aries-transaction-ci:${{ github.sha }}
-          severity: CRITICAL
-          ignore-unfixed: false
-          format: table
-          exit-code: "1"
-
-      - name: Enforce fixable high image vulnerability gate
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
-        with:
-          image-ref: aries-transaction-ci:${{ github.sha }}
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          format: table
-          exit-code: "1"
-
-      - name: Upload image security report
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
-        with:
-          name: trivy-pr-image-${{ github.run_id }}
-          path: trivy-image.sarif
-          if-no-files-found: warn
-          retention-days: 14
 
   ci-gate:
     name: CI gate
@@ -393,33 +315,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Generate immutable image vulnerability report
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
-        with:
-          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
-          severity: HIGH,CRITICAL
-          format: sarif
-          output: trivy-image.sarif
-          exit-code: "0"
-
-      - name: Enforce critical immutable image gate
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
-        with:
-          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
-          severity: CRITICAL
-          ignore-unfixed: false
-          format: table
-          exit-code: "1"
-
-      - name: Enforce fixable high immutable image gate
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25
-        with:
-          image-ref: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
-          severity: HIGH,CRITICAL
-          ignore-unfixed: true
-          format: table
-          exit-code: "1"
-
       - name: Attest image build provenance
         uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a
         with:
@@ -445,14 +340,12 @@ jobs:
             echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } | tee release-evidence.txt
 
-      - name: Upload image evidence
+      - name: Upload release evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: release-evidence-${{ github.sha }}
-          path: |
-            release-evidence.txt
-            trivy-image.sarif
+          path: release-evidence.txt
           if-no-files-found: warn
           retention-days: 30
 

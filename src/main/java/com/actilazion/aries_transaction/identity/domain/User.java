@@ -45,6 +45,11 @@ public class User {
     @Builder.Default
     private Boolean isActive = true;
 
+    @Version
+    @Column(nullable = false)
+    @Builder.Default
+    private long version = 0L;
+
     @Column(name = "failed_login_attempts", nullable = false)
     @Builder.Default
     private int failedLoginAttempts = 0;

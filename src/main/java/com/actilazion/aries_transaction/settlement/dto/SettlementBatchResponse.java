@@ -7,13 +7,15 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
+import tools.jackson.databind.annotation.JsonSerialize;
+import tools.jackson.databind.ser.std.ToStringSerializer;
 
 public record SettlementBatchResponse(
         UUID id,
         String currency,
-        BigDecimal grossAmount,
-        BigDecimal feeAmount,
-        BigDecimal netAmount,
+        @JsonSerialize(using = ToStringSerializer.class) BigDecimal grossAmount,
+        @JsonSerialize(using = ToStringSerializer.class) BigDecimal feeAmount,
+        @JsonSerialize(using = ToStringSerializer.class) BigDecimal netAmount,
         Integer feeRateBps,
         String idempotencyKey,
         OffsetDateTime cutoffCompletedAt,

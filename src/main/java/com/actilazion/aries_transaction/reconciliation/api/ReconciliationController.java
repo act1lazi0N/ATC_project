@@ -4,6 +4,8 @@ import com.actilazion.aries_transaction.common.dto.ApiResponse;
 import com.actilazion.aries_transaction.reconciliation.application.ReconciliationService;
 import com.actilazion.aries_transaction.reconciliation.dto.CreateReconciliationRunRequest;
 import com.actilazion.aries_transaction.reconciliation.dto.ReconciliationRunResponse;
+import com.actilazion.aries_transaction.reconciliation.dto.ReconciliationRunSummaryResponse;
+import com.actilazion.aries_transaction.common.dto.PageResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -19,6 +21,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.UUID;
 
@@ -29,6 +34,23 @@ import java.util.UUID;
 @SecurityRequirement(name = "bearerAuth")
 public class ReconciliationController {
     private final ReconciliationService reconciliationService;
+
+    @GetMapping("/runs")
+    @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")
+    @Operation(summary = "List reconciliation runs")
+    public ResponseEntity<ApiResponse<PageResponse<ReconciliationRunSummaryResponse>>> getRuns(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal UserDetails userDetails
+    ) {
+        return ResponseEntity.ok(ApiResponse.ok(
+                "Reconciliation runs",
+                reconciliationService.getRuns(
+                        PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, 100),
+                                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"))),
+                        userDetails.getUsername())
+        ));
+    }
 
     @PostMapping("/runs")
     @PreAuthorize("hasAnyRole('OPERATOR', 'ADMIN')")

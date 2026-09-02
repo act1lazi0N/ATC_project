@@ -1,6 +1,7 @@
 package com.actilazion.aries_transaction.reconciliation.application;
 
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
+import com.actilazion.aries_transaction.common.dto.PageResponse;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
@@ -8,6 +9,7 @@ import com.actilazion.aries_transaction.reconciliation.domain.ReconciliationExce
 import com.actilazion.aries_transaction.reconciliation.domain.ReconciliationExceptionType;
 import com.actilazion.aries_transaction.reconciliation.domain.ReconciliationRun;
 import com.actilazion.aries_transaction.reconciliation.dto.ReconciliationRunResponse;
+import com.actilazion.aries_transaction.reconciliation.dto.ReconciliationRunSummaryResponse;
 import com.actilazion.aries_transaction.reconciliation.dto.ReportingTransactionSnapshot;
 import com.actilazion.aries_transaction.reconciliation.infrastructure.ReconciliationRunRepository;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
@@ -16,6 +18,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -100,6 +103,14 @@ public class ReconciliationServiceImpl implements ReconciliationService {
         ReconciliationRun run = reconciliationRunRepository.findById(runId)
                 .orElseThrow(() -> new ResourceNotFoundException("ReconciliationRun", runId));
         return ReconciliationRunResponse.from(run);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ReconciliationRunSummaryResponse> getRuns(Pageable pageable, String initiatorEmail) {
+        assertPrivileged(initiatorEmail);
+        return PageResponse.from(reconciliationRunRepository.findAll(pageable)
+                .map(ReconciliationRunSummaryResponse::from));
     }
 
     private void compareSourceAndReporting(

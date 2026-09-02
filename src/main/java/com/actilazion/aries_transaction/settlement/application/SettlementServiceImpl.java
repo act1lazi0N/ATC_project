@@ -3,6 +3,7 @@ package com.actilazion.aries_transaction.settlement.application;
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
 import com.actilazion.aries_transaction.common.exception.ResourceNotFoundException;
+import com.actilazion.aries_transaction.common.dto.PageResponse;
 import com.actilazion.aries_transaction.identity.domain.Role;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
@@ -13,6 +14,7 @@ import com.actilazion.aries_transaction.settlement.domain.SettlementBatchStatus;
 import com.actilazion.aries_transaction.settlement.domain.SettlementItem;
 import com.actilazion.aries_transaction.settlement.domain.SettlementItemType;
 import com.actilazion.aries_transaction.settlement.dto.SettlementBatchResponse;
+import com.actilazion.aries_transaction.settlement.dto.SettlementBatchSummaryResponse;
 import com.actilazion.aries_transaction.settlement.domain.exception.NoSettlementCandidateException;
 import com.actilazion.aries_transaction.settlement.domain.exception.SettlementIdempotencyConflictException;
 import com.actilazion.aries_transaction.settlement.infrastructure.SettlementBatchRepository;
@@ -23,6 +25,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Pageable;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -138,6 +141,14 @@ public class SettlementServiceImpl implements SettlementService {
         SettlementBatch batch = settlementBatchRepository.findById(batchId)
                 .orElseThrow(() -> new ResourceNotFoundException("SettlementBatch", batchId));
         return SettlementBatchResponse.from(batch);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<SettlementBatchSummaryResponse> getBatches(Pageable pageable, String initiatorEmail) {
+        assertPrivileged(initiatorEmail);
+        return PageResponse.from(settlementBatchRepository.findAll(pageable)
+                .map(SettlementBatchSummaryResponse::from));
     }
 
     private BigDecimal calculateFee(BigDecimal grossAmount, int feeRateBps) {

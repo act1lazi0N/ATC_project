@@ -49,7 +49,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, SecurityEndpoints.REGISTER, SecurityEndpoints.LOGIN,
-                                SecurityEndpoints.REFRESH, SecurityEndpoints.LOGOUT).permitAll()
+                                SecurityEndpoints.REFRESH, SecurityEndpoints.LOGOUT,
+                                SecurityEndpoints.EMAIL_VERIFICATION_CONFIRM).permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()

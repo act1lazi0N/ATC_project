@@ -44,7 +44,26 @@ class OutboxWorkerTest {
         verify(outboxEventService).markFailed(
                 event.getId(),
                 event.getClaimToken(),
-                "Publisher did not confirm delivery"
+                "Downstream sink did not confirm durable acceptance"
         );
+    }
+
+    @Test
+    void publishPendingEvents_durablyAcceptedEventIsMarkedPublished() {
+        OutboxEventService outboxEventService = mock(OutboxEventService.class);
+        OutboxEventPublisher publisher = mock(OutboxEventPublisher.class);
+        OutboxWorker worker = new OutboxWorker(outboxEventService, publisher);
+        ReflectionTestUtils.setField(worker, "batchSize", 25);
+        OutboxEvent event = OutboxEvent.builder()
+                .id(UUID.randomUUID())
+                .claimToken(UUID.randomUUID())
+                .build();
+        when(outboxEventService.claimPublishableEvents(25)).thenReturn(List.of(event));
+        when(publisher.publish(event)).thenReturn(true);
+
+        worker.publishPendingEvents();
+
+        verify(outboxEventService).markPublished(event.getId(), event.getClaimToken());
+        verify(outboxEventService, never()).markFailed(any(), any(), any());
     }
 }

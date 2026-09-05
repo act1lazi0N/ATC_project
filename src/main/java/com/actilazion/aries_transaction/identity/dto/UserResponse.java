@@ -12,6 +12,7 @@ public record UserResponse(
         String email,
         Role role,
         Boolean isActive,
+        boolean emailVerified,
         OffsetDateTime createdAt
 )
 {
@@ -22,6 +23,7 @@ public record UserResponse(
                 user.getEmail(),
                 user.getRole(),
                 user.getIsActive(),
+                user.getEmailVerifiedAt() != null,
                 user.getCreatedAt()
         );
     }

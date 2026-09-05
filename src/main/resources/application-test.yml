@@ -57,6 +57,16 @@ app:
     publisher: noop
     batch-size: 25
     poll-interval-ms: 5000
+  webhook:
+    fanout-enabled: false
+  notification:
+    fanout-enabled: false
+    cleanup-enabled: false
+    email:
+      mode: disabled
+      worker-enabled: false
+      verification-signing-key: dGVzdC1lbWFpbC12ZXJpZmljYXRpb24tc2lnbmluZy1rZXktMzItYnl0ZXM=
+      public-base-url: http://localhost:3000/verify-email
   reconciliation:
     expected-lag: PT0S
     max-window: P31D

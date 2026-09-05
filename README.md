@@ -168,6 +168,51 @@ RECONCILIATION_MAX_WINDOW=P31D
 
 OpenAPI is disabled by default outside dev-oriented usage.
 
+### Webhook-backed notifications
+
+The notification module persists an in-app feed for transfer, reversal, and
+refund completion events. Email delivery is a separate durable worker and is
+only eligible after the recipient verifies their email. Merchant operators can
+also receive endpoint-disabled and dead-lettered-delivery alerts when those
+webhook lifecycle transitions are invoked.
+
+Customer endpoints:
+
+```text
+GET   /api/v1/notifications
+GET   /api/v1/notifications/unread-count
+PATCH /api/v1/notifications/{id}/read
+POST  /api/v1/notifications/read-all
+GET   /api/v1/notifications/preferences
+PUT   /api/v1/notifications/preferences
+POST  /api/v1/auth/email-verification/request
+POST  /api/v1/auth/email-verification/confirm
+```
+
+Operator/admin email recovery endpoints:
+
+```text
+GET  /api/v1/operations/notification-email-deliveries
+POST /api/v1/operations/notification-email-deliveries/{id}/retry
+```
+
+To enable both durable webhook and notification sinks with local Mailpit:
+
+```env
+OUTBOX_WORKER_ENABLED=true
+OUTBOX_PUBLISHER=fanout
+WEBHOOK_FANOUT_ENABLED=true
+NOTIFICATION_FANOUT_ENABLED=true
+NOTIFICATION_EMAIL_MODE=smtp
+NOTIFICATION_EMAIL_WORKER_ENABLED=true
+EMAIL_VERIFICATION_SIGNING_KEY=<separate-base64-256-bit-key>
+```
+
+Start Mailpit with `docker compose --profile notification up -d`. The SMTP
+worker is disabled by default; production startup rejects non-HTTPS public URLs
+and SMTP without STARTTLS. No remote HTTP or SMTP call runs inside a money
+transaction.
+
 ## Run With Docker Compose
 
 Copy `.env.example` to `.env` and set strong values for `JWT_SECRET`,
@@ -323,6 +368,8 @@ On macOS/Linux:
 ```
 
 The suite covers service integration, security filter behavior, transaction state guards, transfer concurrency, ledger/outbox assertions, settlement, reconciliation, and Flyway migration validation.
+
+The test profile lives in `src/test/resources` and is excluded from the application JAR. Test startup generates independent 256-bit JWT, ephemeral-store hashing, and email-verification keys in memory, stable for each Spring environment. Unit tests generate their own disposable keys. No test signing keys need to be committed or supplied through environment variables.
 
 Most integration tests use H2 in PostgreSQL compatibility mode for fast feedback. PostgreSQL-specific coverage is added with Testcontainers where it matters, including reconciliation policy behavior with Flyway-backed PostgreSQL. Testcontainers tests are skipped automatically when Docker is unavailable.
 

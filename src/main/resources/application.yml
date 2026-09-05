@@ -32,6 +32,19 @@ spring:
       timeout: 250ms
       repositories:
         enabled: false
+  mail:
+    host: ${SPRING_MAIL_HOST:localhost}
+    port: ${SPRING_MAIL_PORT:1025}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          connectiontimeout: ${SPRING_MAIL_CONNECTION_TIMEOUT_MS:2000}
+          timeout: ${SPRING_MAIL_READ_TIMEOUT_MS:5000}
+          writetimeout: ${SPRING_MAIL_WRITE_TIMEOUT_MS:5000}
+          starttls:
+            enable: ${SPRING_MAIL_STARTTLS_ENABLE:false}
 
 jwt:
   secret: ${JWT_SECRET}
@@ -84,6 +97,25 @@ app:
     publisher: ${OUTBOX_PUBLISHER:noop}
     batch-size: ${OUTBOX_BATCH_SIZE:25}
     poll-interval-ms: ${OUTBOX_POLL_INTERVAL_MS:5000}
+  webhook:
+    fanout-enabled: ${WEBHOOK_FANOUT_ENABLED:false}
+  notification:
+    fanout-enabled: ${NOTIFICATION_FANOUT_ENABLED:false}
+    retention-days: ${NOTIFICATION_RETENTION_DAYS:90}
+    delivery-attempt-retention-days: ${NOTIFICATION_DELIVERY_ATTEMPT_RETENTION_DAYS:30}
+    cleanup-enabled: ${NOTIFICATION_CLEANUP_ENABLED:true}
+    cleanup-interval-ms: ${NOTIFICATION_CLEANUP_INTERVAL_MS:3600000}
+    email:
+      mode: ${NOTIFICATION_EMAIL_MODE:disabled}
+      worker-enabled: ${NOTIFICATION_EMAIL_WORKER_ENABLED:false}
+      batch-size: ${NOTIFICATION_EMAIL_BATCH_SIZE:25}
+      poll-interval-ms: ${NOTIFICATION_EMAIL_POLL_INTERVAL_MS:5000}
+      processing-lease: ${NOTIFICATION_EMAIL_PROCESSING_LEASE:PT5M}
+      max-attempts: ${NOTIFICATION_EMAIL_MAX_ATTEMPTS:8}
+      from: ${NOTIFICATION_EMAIL_FROM:}
+      public-base-url: ${NOTIFICATION_PUBLIC_BASE_URL:}
+      verification-signing-key: ${EMAIL_VERIFICATION_SIGNING_KEY:}
+      verification-ttl: ${EMAIL_VERIFICATION_TTL:PT24H}
   reconciliation:
     expected-lag: ${RECONCILIATION_EXPECTED_LAG:PT5M}
     max-window: ${RECONCILIATION_MAX_WINDOW:P31D}

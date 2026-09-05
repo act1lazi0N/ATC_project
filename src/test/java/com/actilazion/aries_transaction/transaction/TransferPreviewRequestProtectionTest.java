@@ -6,6 +6,7 @@ import com.actilazion.aries_transaction.common.redis.SecurityKeyHasher;
 import com.actilazion.aries_transaction.config.AuthRateLimitConfig;
 import com.actilazion.aries_transaction.config.ClientIpResolver;
 import com.actilazion.aries_transaction.config.RedisEphemeralProperties;
+import com.actilazion.aries_transaction.support.TestSecrets;
 import com.actilazion.aries_transaction.transaction.application.TransferPreviewProperties;
 import com.actilazion.aries_transaction.transaction.application.TransferPreviewRequestProtection;
 import org.junit.jupiter.api.Test;
@@ -56,7 +57,7 @@ class TransferPreviewRequestProtectionTest {
 
     private TransferPreviewRequestProtection protection(TransferPreviewProperties properties) {
         RedisEphemeralProperties ephemeralProperties = new RedisEphemeralProperties();
-        ephemeralProperties.setKeyHashSecret("preview-protection-test-secret");
+        ephemeralProperties.setKeyHashSecret(TestSecrets.newBase64Key());
         AuthRateLimitConfig ipConfig = new AuthRateLimitConfig();
         return new TransferPreviewRequestProtection(
                 properties,

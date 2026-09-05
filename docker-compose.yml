@@ -36,6 +36,16 @@ services:
     networks:
       - transfer_net
 
+  mailpit:
+    image: axllent/mailpit:v1.27
+    profiles: [ "notification" ]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
+    networks:
+      - transfer_net
+
   app:
     image: ${APP_IMAGE:-aries-transaction-project:local}
     build:
@@ -75,6 +85,20 @@ services:
       TRANSFER_PREVIEW_RETENTION_HOURS: ${TRANSFER_PREVIEW_RETENTION_HOURS:-24}
       TRANSFER_PREVIEW_CLEANUP_ENABLED: ${TRANSFER_PREVIEW_CLEANUP_ENABLED:-true}
       TRANSFER_PREVIEW_CLEANUP_FIXED_DELAY_MS: ${TRANSFER_PREVIEW_CLEANUP_FIXED_DELAY_MS:-3600000}
+
+      # Durable webhook/notification fan-out and optional SMTP delivery
+      OUTBOX_WORKER_ENABLED: ${OUTBOX_WORKER_ENABLED:-false}
+      OUTBOX_PUBLISHER: ${OUTBOX_PUBLISHER:-noop}
+      WEBHOOK_FANOUT_ENABLED: ${WEBHOOK_FANOUT_ENABLED:-false}
+      NOTIFICATION_FANOUT_ENABLED: ${NOTIFICATION_FANOUT_ENABLED:-false}
+      NOTIFICATION_EMAIL_MODE: ${NOTIFICATION_EMAIL_MODE:-disabled}
+      NOTIFICATION_EMAIL_WORKER_ENABLED: ${NOTIFICATION_EMAIL_WORKER_ENABLED:-false}
+      NOTIFICATION_EMAIL_FROM: ${NOTIFICATION_EMAIL_FROM:-no-reply@aries.local}
+      NOTIFICATION_PUBLIC_BASE_URL: ${NOTIFICATION_PUBLIC_BASE_URL:-http://localhost:3000/verify-email}
+      EMAIL_VERIFICATION_SIGNING_KEY: ${EMAIL_VERIFICATION_SIGNING_KEY:-}
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-mailpit}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT:-1025}
+      SPRING_MAIL_STARTTLS_ENABLE: ${SPRING_MAIL_STARTTLS_ENABLE:-false}
 
       # OpenAPI docs are disabled by default outside dev
       SPRINGDOC_API_DOCS_ENABLED: ${SPRINGDOC_API_DOCS_ENABLED:-false}

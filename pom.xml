@@ -73,6 +73,12 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
+        <!-- Provider-neutral SMTP adapter for notification email delivery -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
+
         <!-- Redis — idempotency key + rate limiting -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

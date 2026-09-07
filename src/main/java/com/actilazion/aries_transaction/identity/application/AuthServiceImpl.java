@@ -17,6 +17,7 @@ import com.actilazion.aries_transaction.identity.dto.UserResponse;
 import com.actilazion.aries_transaction.identity.infrastructure.RefreshSessionRepository;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import com.actilazion.aries_transaction.identity.domain.exception.UnauthorizedException;
+import com.actilazion.aries_transaction.identity.domain.exception.AccountSuspendedException;
 import com.actilazion.aries_transaction.common.redis.SecurityKeyHasher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -110,6 +111,14 @@ public class AuthServiceImpl implements AuthService {
         if (user != null && isLocked(user, OffsetDateTime.now())) {
             identityAuditService.record(IdentityAuditEventType.LOGIN_LOCKED, user.getId(), email, ipAddress, Map.of());
             throw unauthorized();
+        }
+
+        // Disclose suspension only after verifying the supplied password.
+        if (user != null && !Boolean.TRUE.equals(user.getIsActive())
+                && passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            identityAuditService.record(IdentityAuditEventType.LOGIN_FAILED,
+                    user.getId(), email, ipAddress, Map.of("reason", "ACCOUNT_SUSPENDED"));
+            throw new AccountSuspendedException();
         }
 
         try {

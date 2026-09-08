@@ -49,6 +49,7 @@ class NotificationFanoutPostgresIntegrationTest extends PostgresIntegrationTestS
     @Autowired NotificationFanoutService fanoutService;
     @Autowired NotificationRepository notificationRepository;
     @Autowired EmailDeliveryRepository emailDeliveryRepository;
+    @Autowired com.actilazion.aries_transaction.notification.application.NotificationCleanupService cleanupService;
 
     @Test
     void fanOut_createsRecipientNotificationsAndEmailJobsWithoutSensitiveData() {
@@ -120,6 +121,29 @@ class NotificationFanoutPostgresIntegrationTest extends PostgresIntegrationTestS
         ready.countDown();
         start.await();
         return fanoutService.fanOut(id);
+    }
+
+    @Test
+    void cleanupRacingWithUnpublishedFanoutReplayKeepsDeduplicationEvidence() throws Exception {
+        User sender = user(false);
+        User receiver = user(false);
+        OutboxEvent event = event(sender, account(sender, "860000000001"), account(receiver, "870000000001"));
+        fanoutService.fanOut(event.getId());
+        var notifications = notificationRepository.findAllBySourceKindAndSourceIdOrderByRecipient_Id(
+                NotificationSourceKind.OUTBOX_EVENT, event.getId());
+        notifications.forEach(notification -> notification.setReadAt(OffsetDateTime.now().minusDays(100)));
+        notificationRepository.saveAllAndFlush(notifications);
+        var start = new CountDownLatch(1);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            var purge = executor.submit(() -> { start.await(); return cleanupService.purgeExpired(); });
+            var replay = executor.submit(() -> { start.await(); return fanoutService.fanOut(event.getId()); });
+            start.countDown();
+            purge.get(15, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(replay.get(15, java.util.concurrent.TimeUnit.SECONDS).createdNotificationCount()).isZero();
+        }
+        assertThat(notificationRepository.findAllBySourceKindAndSourceIdOrderByRecipient_Id(
+                NotificationSourceKind.OUTBOX_EVENT, event.getId()))
+                .extracting(Notification::getId).containsExactlyElementsOf(notifications.stream().map(Notification::getId).toList());
     }
 
     private User user(boolean verified) {

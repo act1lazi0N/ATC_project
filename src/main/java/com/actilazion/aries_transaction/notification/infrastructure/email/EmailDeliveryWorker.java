@@ -22,8 +22,8 @@ public class EmailDeliveryWorker {
 
     @Scheduled(fixedDelayString = "${app.notification.email.poll-interval-ms:5000}")
     public void deliverPending() {
-        for (EmailDeliveryWorkItem work : service.claim(properties.getEmail().getBatchSize())) {
-            deliver(work);
+        for (var id : service.findDueIds(properties.getEmail().getBatchSize())) {
+            service.claim(id).ifPresent(this::deliver);
         }
     }
 

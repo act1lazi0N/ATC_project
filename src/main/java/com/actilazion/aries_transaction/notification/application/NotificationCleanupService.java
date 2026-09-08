@@ -24,6 +24,8 @@ public class NotificationCleanupService {
         int attempts = attemptRepository.deleteTerminalBefore(
                 now.minusDays(properties.getDeliveryAttemptRetentionDays()));
         metrics.cleanup(notifications, attempts);
+        metrics.retainedBacklog(notificationRepository.countRetainedBefore(
+                now.minusDays(properties.getRetentionDays())));
         return new CleanupResult(notifications, attempts);
     }
 

@@ -40,11 +40,15 @@ spring:
     properties:
       mail:
         smtp:
+          auth: ${SPRING_MAIL_AUTH:false}
           connectiontimeout: ${SPRING_MAIL_CONNECTION_TIMEOUT_MS:2000}
           timeout: ${SPRING_MAIL_READ_TIMEOUT_MS:5000}
           writetimeout: ${SPRING_MAIL_WRITE_TIMEOUT_MS:5000}
           starttls:
             enable: ${SPRING_MAIL_STARTTLS_ENABLE:false}
+            required: ${SPRING_MAIL_STARTTLS_REQUIRED:false}
+          ssl:
+            checkserveridentity: ${SPRING_MAIL_SSL_CHECK_SERVER_IDENTITY:true}
 
 jwt:
   secret: ${JWT_SECRET}
@@ -148,6 +152,8 @@ management:
         enabled: true
       show-details: never
   health:
+    mail:
+      enabled: ${NOTIFICATION_EMAIL_WORKER_ENABLED:false}
     redis:
       enabled: ${SECURITY_EPHEMERAL_ENABLED:true}
 

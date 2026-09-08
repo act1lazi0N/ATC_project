@@ -3,13 +3,20 @@ package com.actilazion.aries_transaction.notification.application;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.stereotype.Component;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Component
 public class NotificationMetrics {
     private final MeterRegistry registry;
+    private final AtomicLong retained = new AtomicLong();
 
     public NotificationMetrics(MeterRegistry registry) {
         this.registry = registry;
+        registry.gauge("aries.notification.cleanup.retained", retained);
+    }
+
+    public void retainedBacklog(long count) {
+        retained.set(count);
     }
 
     public void fanoutAccepted(int created) {

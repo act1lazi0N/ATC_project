@@ -20,7 +20,7 @@ public interface EmailDeliveryAttemptRepository extends JpaRepository<EmailDeliv
               AND delivery_id IN (
                   SELECT id
                   FROM email_deliveries
-                  WHERE status IN ('DELIVERED', 'DEAD_LETTERED', 'CANCELLED')
+                  WHERE status IN ('DELIVERED', 'CANCELLED')
               )
             """, nativeQuery = true)
     int deleteTerminalBefore(@Param("cutoff") OffsetDateTime cutoff);

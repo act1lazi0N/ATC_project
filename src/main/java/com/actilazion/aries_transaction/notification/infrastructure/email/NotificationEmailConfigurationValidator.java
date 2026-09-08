@@ -37,6 +37,10 @@ public class NotificationEmailConfigurationValidator implements SmartLifecycle {
         requireText(email.getFrom(), "NOTIFICATION_EMAIL_FROM");
         requireText(email.getPublicBaseUrl(), "NOTIFICATION_PUBLIC_BASE_URL");
         requireText(environment.getProperty("spring.mail.host"), "SPRING_MAIL_HOST");
+        if (environment.getProperty("spring.mail.properties.mail.smtp.auth", Boolean.class, false)) {
+            requireText(environment.getProperty("spring.mail.username"), "SPRING_MAIL_USERNAME");
+            requireText(environment.getProperty("spring.mail.password"), "SPRING_MAIL_PASSWORD");
+        }
         tokenService.requireConfigured();
         URI publicUrl = URI.create(email.getPublicBaseUrl());
         if (publicUrl.getHost() == null) {
@@ -49,6 +53,14 @@ public class NotificationEmailConfigurationValidator implements SmartLifecycle {
         if (production && !environment.getProperty(
                 "spring.mail.properties.mail.smtp.starttls.enable", Boolean.class, false)) {
             throw new IllegalStateException("Production SMTP must enable STARTTLS");
+        }
+        if (production && !environment.getProperty(
+                "spring.mail.properties.mail.smtp.starttls.required", Boolean.class, false)) {
+            throw new IllegalStateException("Production SMTP must require STARTTLS");
+        }
+        if (production && !environment.getProperty(
+                "spring.mail.properties.mail.smtp.ssl.checkserveridentity", Boolean.class, false)) {
+            throw new IllegalStateException("Production SMTP must verify server identity");
         }
         running = true;
     }

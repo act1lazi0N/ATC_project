@@ -20,6 +20,7 @@ import com.actilazion.aries_transaction.notification.dto.EmailDeliveryOperations
 import com.actilazion.aries_transaction.notification.infrastructure.EmailDeliveryAttemptRepository;
 import com.actilazion.aries_transaction.notification.infrastructure.EmailDeliveryRepository;
 import com.actilazion.aries_transaction.notification.infrastructure.NotificationPreferenceRepository;
+import com.actilazion.aries_transaction.notification.infrastructure.email.EmailMessage;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -30,9 +31,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -49,35 +50,66 @@ public class EmailDeliveryService {
     private final NotificationProperties properties;
     private final IdentityAuditService identityAuditService;
 
-    @Transactional
-    public List<EmailDeliveryWorkItem> claim(int requestedLimit) {
+    @Transactional(readOnly = true)
+    public List<UUID> findDueIds(int requestedLimit) {
         int limit = Math.clamp(requestedLimit, 1, 100);
+        return deliveryRepository.findPublishableIds(PUBLISHABLE, OffsetDateTime.now(), PageRequest.of(0, limit));
+    }
+
+    @Transactional
+    public Optional<EmailDeliveryWorkItem> claim(UUID deliveryId) {
+        // Lock only the delivery row; load optional relationships after obtaining ownership.
+        EmailDelivery delivery = deliveryRepository.findByIdForUpdate(deliveryId).orElse(null);
         OffsetDateTime now = OffsetDateTime.now();
-        List<EmailDelivery> deliveries = deliveryRepository.findPublishableWithLock(
-                PUBLISHABLE, now, PageRequest.of(0, limit));
-        List<EmailDeliveryWorkItem> work = new ArrayList<>();
-        for (EmailDelivery delivery : deliveries) {
-            String cancellation = cancellationReason(delivery, now);
-            if (cancellation != null) {
-                cancel(delivery, cancellation);
-                continue;
-            }
-            delivery.setStatus(EmailDeliveryStatus.PROCESSING);
-            delivery.setAttemptCount(delivery.getAttemptCount() + 1);
-            delivery.setCycleAttemptCount(delivery.getCycleAttemptCount() + 1);
-            delivery.setClaimToken(UUID.randomUUID());
-            delivery.setNextAttemptAt(now.plus(properties.getEmail().getProcessingLease()));
-            delivery.setProviderMessageId(delivery.getId().toString());
-            delivery.setLastErrorCode(null);
-            work.add(new EmailDeliveryWorkItem(
-                    delivery.getId(),
-                    delivery.getClaimToken(),
-                    delivery.getAttemptCount(),
-                    renderer.render(delivery)
-            ));
+        if (delivery == null || !PUBLISHABLE.contains(delivery.getStatus())
+                || (delivery.getNextAttemptAt() != null && delivery.getNextAttemptAt().isAfter(now))) {
+            return Optional.empty();
         }
-        deliveryRepository.saveAllAndFlush(deliveries);
-        return work;
+        if (delivery.getStatus() == EmailDeliveryStatus.PROCESSING) {
+            boolean exhausted = delivery.getCycleAttemptCount() >= properties.getEmail().getMaxAttempts();
+            attemptRepository.save(attempt(delivery, exhausted
+                    ? EmailDeliveryAttemptOutcome.TERMINAL_FAILURE : EmailDeliveryAttemptOutcome.RETRYABLE_FAILURE,
+                    "DELIVERY_OUTCOME_UNKNOWN", 0, "DELIVERY_OUTCOME_UNKNOWN"));
+            if (exhausted) {
+                deadLetter(delivery, "DELIVERY_OUTCOME_UNKNOWN");
+                return Optional.empty();
+            }
+        } else if (delivery.getCycleAttemptCount() >= properties.getEmail().getMaxAttempts()) {
+            deadLetter(delivery, "ATTEMPT_LIMIT_REACHED");
+            return Optional.empty();
+        }
+        String cancellation = cancellationReason(delivery, now);
+        if (cancellation != null) {
+            cancel(delivery, cancellation);
+            return Optional.empty();
+        }
+        delivery.setStatus(EmailDeliveryStatus.PROCESSING);
+        delivery.setAttemptCount(delivery.getAttemptCount() + 1);
+        delivery.setCycleAttemptCount(delivery.getCycleAttemptCount() + 1);
+        delivery.setClaimToken(UUID.randomUUID());
+        delivery.setNextAttemptAt(now.plus(properties.getEmail().getProcessingLease()));
+        delivery.setProviderMessageId(delivery.getId().toString());
+        delivery.setLastErrorCode(null);
+        EmailMessage message;
+        try {
+            message = renderer.render(delivery);
+        } catch (RuntimeException ex) {
+            // Rendering has no external side effects. Quarantine this message without logging its content.
+            attemptRepository.save(attempt(delivery, EmailDeliveryAttemptOutcome.TERMINAL_FAILURE,
+                    "EMAIL_RENDERING_FAILURE", 0, "EMAIL_RENDERING_FAILURE"));
+            deadLetter(delivery, "EMAIL_RENDERING_FAILURE");
+            return Optional.empty();
+        }
+        deliveryRepository.flush();
+        return Optional.of(new EmailDeliveryWorkItem(
+                delivery.getId(), delivery.getClaimToken(), delivery.getAttemptCount(), message));
+    }
+
+    private void deadLetter(EmailDelivery delivery, String code) {
+        delivery.setStatus(EmailDeliveryStatus.DEAD_LETTERED);
+        delivery.setNextAttemptAt(null);
+        delivery.setClaimToken(null);
+        delivery.setLastErrorCode(code);
     }
 
     @Transactional

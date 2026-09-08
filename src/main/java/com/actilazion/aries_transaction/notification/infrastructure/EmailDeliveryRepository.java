@@ -18,19 +18,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface EmailDeliveryRepository extends JpaRepository<EmailDelivery, UUID> {
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
-            SELECT delivery
+            SELECT delivery.id
             FROM EmailDelivery delivery
-            LEFT JOIN FETCH delivery.notification notification
-            LEFT JOIN FETCH notification.recipient
-            LEFT JOIN FETCH delivery.verificationChallenge challenge
-            LEFT JOIN FETCH challenge.user
             WHERE delivery.status IN :statuses
               AND (delivery.nextAttemptAt IS NULL OR delivery.nextAttemptAt <= :now)
             ORDER BY delivery.createdAt, delivery.id
             """)
-    List<EmailDelivery> findPublishableWithLock(
+    List<UUID> findPublishableIds(
             @Param("statuses") Collection<EmailDeliveryStatus> statuses,
             @Param("now") OffsetDateTime now,
             Pageable pageable

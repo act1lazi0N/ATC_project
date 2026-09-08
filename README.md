@@ -209,9 +209,56 @@ EMAIL_VERIFICATION_SIGNING_KEY=<separate-base64-256-bit-key>
 ```
 
 Start Mailpit with `docker compose --profile notification up -d`. The SMTP
-worker is disabled by default; production startup rejects non-HTTPS public URLs
-and SMTP without STARTTLS. No remote HTTP or SMTP call runs inside a money
-transaction.
+worker is disabled by default; SMTP health checks are enabled with the worker.
+Open `http://localhost:8025` to read messages
+captured by Mailpit; this setup does not deliver them to Gmail or another real
+inbox. Production startup requires an HTTPS public URL, required STARTTLS,
+and server hostname verification. No remote HTTP or SMTP call runs inside a
+money transaction.
+
+#### Sending verification emails to a real inbox through Gmail
+
+Configure the sending account in your ignored `.env` file:
+
+```env
+NOTIFICATION_EMAIL_MODE=smtp
+NOTIFICATION_EMAIL_WORKER_ENABLED=true
+NOTIFICATION_EMAIL_FROM=<sender@gmail.com>
+NOTIFICATION_PUBLIC_BASE_URL=http://localhost:3000/verify-email
+EMAIL_VERIFICATION_SIGNING_KEY=<separate-base64-256-bit-key>
+SPRING_MAIL_HOST=smtp.gmail.com
+SPRING_MAIL_PORT=587
+SPRING_MAIL_USERNAME=<sender@gmail.com>
+SPRING_MAIL_PASSWORD=<Google-App-Password>
+SPRING_MAIL_AUTH=true
+SPRING_MAIL_STARTTLS_ENABLE=true
+SPRING_MAIL_STARTTLS_REQUIRED=true
+SPRING_MAIL_SSL_CHECK_SERVER_IDENTITY=true
+```
+
+Use a [Google App Password](https://support.google.com/accounts/answer/185833)
+for an eligible account with 2-Step Verification enabled, not your normal Google
+password. Google's [SMTP settings](https://support.google.com/mail/answer/7104828)
+require authentication and support STARTTLS on port 587. The sender account
+and the recipient account may be different. Use a reachable HTTPS verification
+URL for a deployed app. Keep credentials out of source control and chat.
+
+`NOTIFICATION_EMAIL_MODE` must be `smtp`, not `enable` or `true`.
+Verification emails only need the email worker; enabling the outbox or merchant
+webhook workers is not required. HTTP 202 means the request was queued. A
+PENDING delivery with zero attempts has not contacted the SMTP server.
+
+After changing `.env`, recreate the app so Docker receives the new environment:
+
+```bash
+docker compose up -d --no-deps --force-recreate app
+```
+
+A plain `docker compose restart app` keeps the old environment. Build an updated
+local image or pull a release containing the SMTP credential mappings before
+recreating if your image predates this configuration. Repeatedly requesting a
+verification email invalidates earlier links; use the newest email after the
+worker is running. DELIVERED records SMTP acceptance, not confirmed inbox receipt.
 
 ## Run With Docker Compose
 

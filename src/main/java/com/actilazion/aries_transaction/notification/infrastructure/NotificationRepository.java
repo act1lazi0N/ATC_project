@@ -68,6 +68,28 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
     );
 
     @Modifying
-    @Query("DELETE FROM Notification notification WHERE notification.readAt IS NOT NULL AND notification.readAt < :cutoff")
+    @Query(value = """
+            DELETE FROM notifications n
+            WHERE n.read_at < :cutoff
+              AND NOT EXISTS (
+                  SELECT 1 FROM email_deliveries d WHERE d.notification_id = n.id
+                    AND d.status NOT IN ('DELIVERED', 'CANCELLED')
+              )
+              AND (n.source_kind <> 'OUTBOX_EVENT' OR EXISTS (
+                  SELECT 1 FROM outbox_events e WHERE e.id = n.source_id AND e.status = 'PUBLISHED'
+              ))
+            """, nativeQuery = true)
     int deleteReadBefore(@Param("cutoff") OffsetDateTime cutoff);
+
+    @Query(value = """
+            SELECT COUNT(*) FROM notifications n
+            WHERE n.read_at < :cutoff
+              AND (EXISTS (
+                  SELECT 1 FROM email_deliveries d WHERE d.notification_id = n.id
+                    AND d.status NOT IN ('DELIVERED', 'CANCELLED')
+              ) OR (n.source_kind = 'OUTBOX_EVENT' AND NOT EXISTS (
+                  SELECT 1 FROM outbox_events e WHERE e.id = n.source_id AND e.status = 'PUBLISHED'
+              )))
+            """, nativeQuery = true)
+    long countRetainedBefore(@Param("cutoff") OffsetDateTime cutoff);
 }

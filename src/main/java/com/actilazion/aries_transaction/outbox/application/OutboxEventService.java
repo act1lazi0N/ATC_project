@@ -3,6 +3,7 @@ package com.actilazion.aries_transaction.outbox.application;
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEvent;
 import com.actilazion.aries_transaction.transaction.domain.Transaction;
+import com.actilazion.aries_transaction.transaction.infrastructure.TransactionRepository;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEventStatus;
 import com.actilazion.aries_transaction.outbox.domain.OutboxEventType;
 import com.actilazion.aries_transaction.outbox.infrastructure.OutboxEventRepository;
@@ -26,6 +27,7 @@ public class OutboxEventService {
     private static final Duration PROCESSING_LEASE_DURATION = Duration.ofMinutes(5);
 
     private final OutboxEventRepository outboxEventRepository;
+    private final TransactionRepository transactionRepository;
 
     @Transactional
     public void recordTransferCompleted(Transaction tx) {
@@ -43,6 +45,9 @@ public class OutboxEventService {
     }
 
     private void recordTransactionCompleted(Transaction tx, OutboxEventType eventType) {
+        // Serialize aggregate replays in the same transaction as the financial effects.
+        transactionRepository.findByIdWithLock(tx.getId())
+                .orElseThrow(() -> new IllegalArgumentException("Outbox transaction aggregate does not exist"));
         boolean alreadyRecorded = outboxEventRepository
                 .findByAggregateTypeAndAggregateIdAndEventType(
                         eventType.aggregateType(),

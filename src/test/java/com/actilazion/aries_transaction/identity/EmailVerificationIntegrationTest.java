@@ -62,8 +62,11 @@ class EmailVerificationIntegrationTest {
         EmailVerificationChallenge current = challengeRepository
                 .findAllByUser_IdOrderByCreatedAtDesc(user.getId()).getFirst();
         String token = tokenService.tokenFor(current);
-        String tampered = token.substring(0, token.length() - 1)
-                + (token.endsWith("A") ? "B" : "A");
+        int signatureStart = token.indexOf('.') + 1;
+        byte[] signature = java.util.Base64.getUrlDecoder().decode(token.substring(signatureStart));
+        signature[0] ^= 1;
+        String tampered = token.substring(0, signatureStart)
+                + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
         assertThatThrownBy(() -> service.confirm(tampered, null))
                 .hasMessage("Email verification token is invalid or expired");
     }

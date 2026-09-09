@@ -24,7 +24,6 @@ logging:
     org.springframework.test.context: WARN
 
 jwt:
-  secret: dGhpcyBpcyBhIHZlcnkgbG9uZyBzZWNyZXQga2V5IGZvciB0ZXN0cw==
   expiration: 900
   refresh-expiration: 2592000
   refresh-cookie-secure: false
@@ -37,7 +36,6 @@ security:
   ephemeral:
     enabled: false
     key-prefix: aries:transaction:test:v1
-    key-hash-secret: test-ephemeral-key-hash-secret
     command-timeout-ms: 250
   auth-rate-limit:
     window-seconds: 60
@@ -65,7 +63,6 @@ app:
     email:
       mode: disabled
       worker-enabled: false
-      verification-signing-key: testverificationsigningkeyinbase64
       public-base-url: http://localhost:3000/verify-email
   reconciliation:
     expected-lag: PT0S

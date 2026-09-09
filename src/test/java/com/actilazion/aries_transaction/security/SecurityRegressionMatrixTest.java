@@ -79,7 +79,7 @@ class SecurityRegressionMatrixTest {
         User user = user(Role.USER, true);
         String token = signed(user, new Date(),
                 new Date(System.currentTimeMillis() + 60_000), null,
-                Keys.hmacShaKeyFor(new byte[32]));
+                Jwts.SIG.HS256.key().build());
 
         assertThat(get("/api/v1/auth/me", token).statusCode()).isEqualTo(401);
     }

@@ -416,6 +416,8 @@ On macOS/Linux:
 
 The suite covers service integration, security filter behavior, transaction state guards, transfer concurrency, ledger/outbox assertions, settlement, reconciliation, and Flyway migration validation.
 
+The test profile lives in `src/test/resources` and is excluded from the application JAR. Test startup generates independent 256-bit JWT, ephemeral-store hashing, and email-verification keys in memory, stable for each Spring environment. Unit tests generate their own disposable keys. No test signing keys need to be committed or supplied through environment variables.
+
 Most integration tests use H2 in PostgreSQL compatibility mode for fast feedback. PostgreSQL-specific coverage is added with Testcontainers where it matters, including reconciliation policy behavior with Flyway-backed PostgreSQL. Testcontainers tests are skipped automatically when Docker is unavailable.
 
 ## Security Notes

@@ -65,7 +65,7 @@ app:
     email:
       mode: disabled
       worker-enabled: false
-      verification-signing-key: dGVzdC1lbWFpbC12ZXJpZmljYXRpb24tc2lnbmluZy1rZXktMzItYnl0ZXM=
+      verification-signing-key: testverificationsigningkeyinbase64
       public-base-url: http://localhost:3000/verify-email
   reconciliation:
     expected-lag: PT0S

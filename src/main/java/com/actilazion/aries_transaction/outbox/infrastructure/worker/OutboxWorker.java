@@ -37,17 +37,17 @@ public class OutboxWorker {
 
     private void publishOne(OutboxEvent event) {
         try {
-            boolean delivered = outboxEventPublisher.publish(event);
-            if (delivered) {
+            boolean accepted = outboxEventPublisher.publish(event);
+            if (accepted) {
                 outboxEventService.markPublished(event.getId(), event.getClaimToken());
                 return;
             }
 
-            log.info("[OUTBOX] Event remains pending id={} publisher did not confirm delivery", event.getId());
+            log.info("[OUTBOX] Event remains pending id={} sink did not confirm durable acceptance", event.getId());
             outboxEventService.markFailed(
                     event.getId(),
                     event.getClaimToken(),
-                    "Publisher did not confirm delivery"
+                    "Downstream sink did not confirm durable acceptance"
             );
         } catch (Exception ex) {
             log.error("[OUTBOX] Event delivery failed id={} error={}", event.getId(), ex.getMessage(), ex);

@@ -168,6 +168,98 @@ RECONCILIATION_MAX_WINDOW=P31D
 
 OpenAPI is disabled by default outside dev-oriented usage.
 
+### Webhook-backed notifications
+
+The notification module persists an in-app feed for transfer, reversal, and
+refund completion events. Email delivery is a separate durable worker and is
+only eligible after the recipient verifies their email. Merchant operators can
+also receive endpoint-disabled and dead-lettered-delivery alerts when those
+webhook lifecycle transitions are invoked.
+
+Customer endpoints:
+
+```text
+GET   /api/v1/notifications
+GET   /api/v1/notifications/unread-count
+PATCH /api/v1/notifications/{id}/read
+POST  /api/v1/notifications/read-all
+GET   /api/v1/notifications/preferences
+PUT   /api/v1/notifications/preferences
+POST  /api/v1/auth/email-verification/request
+POST  /api/v1/auth/email-verification/confirm
+```
+
+Operator/admin email recovery endpoints:
+
+```text
+GET  /api/v1/operations/notification-email-deliveries
+POST /api/v1/operations/notification-email-deliveries/{id}/retry
+```
+
+To enable both durable webhook and notification sinks with local Mailpit:
+
+```env
+OUTBOX_WORKER_ENABLED=true
+OUTBOX_PUBLISHER=fanout
+WEBHOOK_FANOUT_ENABLED=true
+NOTIFICATION_FANOUT_ENABLED=true
+NOTIFICATION_EMAIL_MODE=smtp
+NOTIFICATION_EMAIL_WORKER_ENABLED=true
+EMAIL_VERIFICATION_SIGNING_KEY=<separate-base64-256-bit-key>
+```
+
+Start Mailpit with `docker compose --profile notification up -d`. The SMTP
+worker is disabled by default; SMTP health checks are enabled with the worker.
+Open `http://localhost:8025` to read messages
+captured by Mailpit; this setup does not deliver them to Gmail or another real
+inbox. Production startup requires an HTTPS public URL, required STARTTLS,
+and server hostname verification. No remote HTTP or SMTP call runs inside a
+money transaction.
+
+#### Sending verification emails to a real inbox through Gmail
+
+Configure the sending account in your ignored `.env` file:
+
+```env
+NOTIFICATION_EMAIL_MODE=smtp
+NOTIFICATION_EMAIL_WORKER_ENABLED=true
+NOTIFICATION_EMAIL_FROM=<sender@gmail.com>
+NOTIFICATION_PUBLIC_BASE_URL=http://localhost:3000/verify-email
+EMAIL_VERIFICATION_SIGNING_KEY=<separate-base64-256-bit-key>
+SPRING_MAIL_HOST=smtp.gmail.com
+SPRING_MAIL_PORT=587
+SPRING_MAIL_USERNAME=<sender@gmail.com>
+SPRING_MAIL_PASSWORD=<Google-App-Password>
+SPRING_MAIL_AUTH=true
+SPRING_MAIL_STARTTLS_ENABLE=true
+SPRING_MAIL_STARTTLS_REQUIRED=true
+SPRING_MAIL_SSL_CHECK_SERVER_IDENTITY=true
+```
+
+Use a [Google App Password](https://support.google.com/accounts/answer/185833)
+for an eligible account with 2-Step Verification enabled, not your normal Google
+password. Google's [SMTP settings](https://support.google.com/mail/answer/7104828)
+require authentication and support STARTTLS on port 587. The sender account
+and the recipient account may be different. Use a reachable HTTPS verification
+URL for a deployed app. Keep credentials out of source control and chat.
+
+`NOTIFICATION_EMAIL_MODE` must be `smtp`, not `enable` or `true`.
+Verification emails only need the email worker; enabling the outbox or merchant
+webhook workers is not required. HTTP 202 means the request was queued. A
+PENDING delivery with zero attempts has not contacted the SMTP server.
+
+After changing `.env`, recreate the app so Docker receives the new environment:
+
+```bash
+docker compose up -d --no-deps --force-recreate app
+```
+
+A plain `docker compose restart app` keeps the old environment. Build an updated
+local image or pull a release containing the SMTP credential mappings before
+recreating if your image predates this configuration. Repeatedly requesting a
+verification email invalidates earlier links; use the newest email after the
+worker is running. DELIVERED records SMTP acceptance, not confirmed inbox receipt.
+
 ## Run With Docker Compose
 
 Copy `.env.example` to `.env` and set strong values for `JWT_SECRET`,
@@ -323,6 +415,8 @@ On macOS/Linux:
 ```
 
 The suite covers service integration, security filter behavior, transaction state guards, transfer concurrency, ledger/outbox assertions, settlement, reconciliation, and Flyway migration validation.
+
+The test profile lives in `src/test/resources` and is excluded from the application JAR. Test startup generates independent 256-bit JWT, ephemeral-store hashing, and email-verification keys in memory, stable for each Spring environment. Unit tests generate their own disposable keys. No test signing keys need to be committed or supplied through environment variables.
 
 Most integration tests use H2 in PostgreSQL compatibility mode for fast feedback. PostgreSQL-specific coverage is added with Testcontainers where it matters, including reconciliation policy behavior with Flyway-backed PostgreSQL. Testcontainers tests are skipped automatically when Docker is unavailable.
 

@@ -9,6 +9,8 @@ import com.actilazion.aries_transaction.identity.application.AuthenticatedUserPr
 import com.actilazion.aries_transaction.identity.dto.AuthResponse;
 import com.actilazion.aries_transaction.identity.dto.RegisterRequest;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
+import com.actilazion.aries_transaction.identity.infrastructure.RefreshSessionRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -53,6 +55,12 @@ class SecurityFilterIntegrationTest {
 
     @Autowired
     AuthService authService;
+
+    @Autowired
+    PasswordEncoder passwordEncoder;
+
+    @Autowired
+    RefreshSessionRepository refreshSessionRepository;
 
     @Test
     void settlementCreate_userRole_forbidden() throws Exception {
@@ -155,6 +163,50 @@ class SecurityFilterIntegrationTest {
         assertThat(response.statusCode()).isEqualTo(401);
         assertThat(response.body()).contains("\"status\":401");
         assertThat(response.body()).contains("\"message\":\"Unauthorized\"");
+    }
+
+    @Test
+    void login_suspendedWithCorrectPassword_returnsExplicitCodeWithoutIssuingSession() throws Exception {
+        User user = savedUser(Role.USER, false);
+        user.setPasswordHash(passwordEncoder.encode("suspended-password-123"));
+        userRepository.saveAndFlush(user);
+        String credentials = """
+                {"email":"%s","password":"suspended-password-123"}
+                """.formatted(user.getEmail());
+
+        HttpResponse<String> response = postWithoutAuthorization("/api/v1/auth/login", credentials);
+
+        assertThat(response.statusCode()).isEqualTo(403);
+        assertThat(response.body()).contains("\"code\":\"ACCOUNT_SUSPENDED\"");
+        assertThat(response.body()).doesNotContain("accessToken", "refreshToken", user.getEmail());
+        assertThat(response.headers().firstValue("Cache-Control")).contains("no-store");
+        assertThat(response.headers().firstValue("Set-Cookie")).isEmpty();
+        assertThat(refreshSessionRepository.countByUserId(user.getId())).isZero();
+        User suspended = userRepository.findById(user.getId()).orElseThrow();
+        assertThat(suspended.getIsActive()).isFalse();
+        assertThat(suspended.getFailedLoginAttempts()).isZero();
+
+        suspended.setIsActive(true);
+        userRepository.saveAndFlush(suspended);
+        HttpResponse<String> reactivated = postWithoutAuthorization("/api/v1/auth/login", credentials);
+        assertThat(reactivated.statusCode()).isEqualTo(200);
+        assertThat(reactivated.body()).contains("accessToken");
+        assertThat(refreshSessionRepository.countByUserId(user.getId())).isEqualTo(1);
+    }
+
+    @Test
+    void login_suspendedWithWrongPassword_keepsGenericFailureAndCountsAttempt() throws Exception {
+        User user = savedUser(Role.USER, false);
+        HttpResponse<String> response = postWithoutAuthorization("/api/v1/auth/login", """
+                {"email":"%s","password":"wrong-password"}
+                """.formatted(user.getEmail()));
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("\"code\":\"UNAUTHORIZED\"");
+        assertThat(response.body()).doesNotContain("ACCOUNT_SUSPENDED", "accessToken");
+        assertThat(response.headers().firstValue("Set-Cookie")).isEmpty();
+        assertThat(refreshSessionRepository.countByUserId(user.getId())).isZero();
+        assertThat(userRepository.findById(user.getId()).orElseThrow().getFailedLoginAttempts()).isEqualTo(1);
     }
 
     @Test

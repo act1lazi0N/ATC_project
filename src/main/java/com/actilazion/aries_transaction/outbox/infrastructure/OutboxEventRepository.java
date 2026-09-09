@@ -17,6 +17,10 @@ import java.util.UUID;
 
 @Repository
 public interface OutboxEventRepository extends JpaRepository<OutboxEvent, UUID> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT event FROM OutboxEvent event WHERE event.id = :id")
+    Optional<OutboxEvent> findByIdWithLock(@Param("id") UUID id);
+
     Optional<OutboxEvent> findByAggregateTypeAndAggregateIdAndEventType(
             String aggregateType,
             UUID aggregateId,

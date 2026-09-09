@@ -7,6 +7,7 @@ import com.actilazion.aries_transaction.config.ClientIpResolver;
 import com.actilazion.aries_transaction.config.RedisEphemeralProperties;
 import com.actilazion.aries_transaction.common.redis.InMemoryAuthRateLimitStore;
 import com.actilazion.aries_transaction.common.redis.SecurityKeyHasher;
+import com.actilazion.aries_transaction.support.TestSecrets;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
@@ -20,7 +21,7 @@ class AuthRateLimiterTest {
         config.setIpRequests(2);
         config.setIdentityRequests(1);
         RedisEphemeralProperties properties = new RedisEphemeralProperties();
-        properties.setKeyHashSecret("test-secret");
+        properties.setKeyHashSecret(TestSecrets.newBase64Key());
         AuthRateLimiter limiter = new AuthRateLimiter(
                 config,
                 new InMemoryAuthRateLimitStore(),

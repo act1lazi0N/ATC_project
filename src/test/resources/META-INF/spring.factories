@@ -1,0 +1,2 @@
+org.springframework.boot.EnvironmentPostProcessor=\
+com.actilazion.aries_transaction.support.TestSecretsEnvironmentPostProcessor

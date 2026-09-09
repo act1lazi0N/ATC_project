@@ -20,6 +20,17 @@ import java.util.UUID;
 @Repository
 public interface TransactionRepository extends JpaRepository<Transaction, UUID>, JpaSpecificationExecutor<Transaction> {
 
+    @Query("""
+    SELECT tx FROM Transaction tx
+    JOIN FETCH tx.fromAccount fromAccount
+    JOIN FETCH fromAccount.user
+    JOIN FETCH tx.toAccount toAccount
+    JOIN FETCH toAccount.user
+    LEFT JOIN FETCH tx.originalTransaction
+    WHERE tx.id = :id
+    """)
+    Optional<Transaction> findWebhookAggregateById(@Param("id") UUID id);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT t FROM Transaction t WHERE t.id = :id")
     Optional<Transaction> findByIdWithLock(@Param("id") UUID id);

@@ -93,6 +93,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private void reject(HttpServletResponse response) throws IOException {
         SecurityContextHolder.clearContext();
+        response.setHeader("Cache-Control", "no-store");
         response.setHeader("WWW-Authenticate", "Bearer");
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.flushBuffer();

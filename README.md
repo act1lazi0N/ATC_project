@@ -168,6 +168,14 @@ RECONCILIATION_MAX_WINDOW=P31D
 
 OpenAPI is disabled by default outside dev-oriented usage.
 
+### Account security
+
+Password change, email password recovery and logout-all are available behind
+`ACCOUNT_SECURITY_ENABLED` (default `false`). They revoke all access and refresh
+sessions after password changes and preserve database-backed identity checks.
+See [account security contracts, rollout and frontend handoff](docs/ACCOUNT_SECURITY.md)
+before enabling the feature, including the new email delivery purposes.
+
 ### Webhook-backed notifications
 
 The notification module persists an in-app feed for transfer, reversal, and

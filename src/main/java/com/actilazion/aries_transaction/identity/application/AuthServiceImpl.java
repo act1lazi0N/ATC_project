@@ -69,7 +69,7 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public AuthResponse register(RegisterRequest request, String ipAddress) {
         String email = normalizeEmail(request.email());
-        validatePasswordLength(request.password());
+        PasswordPolicy.validateNew(request.password());
         if (userRepository.existsByEmail(email)) {
             identityAuditService.record(IdentityAuditEventType.REGISTRATION_REJECTED, null, email, ipAddress, Map.of());
             throw registrationConflict();
@@ -160,7 +160,7 @@ public class AuthServiceImpl implements AuthService {
             throw unauthorized();
         }
 
-        RefreshSession current = refreshSessionRepository.findByTokenHashForUpdate(hash(refreshToken)).orElse(null);
+        RefreshSession current = lockRefreshSession(refreshToken);
         if (current == null) {
             identityAuditService.record(IdentityAuditEventType.REFRESH_REJECTED, null, null, ipAddress, Map.of());
             throw unauthorized();
@@ -188,7 +188,7 @@ public class AuthServiceImpl implements AuthService {
                     IdentityAuditEventType.REFRESH_REJECTED, user.getId(), null, ipAddress, Map.of());
             throw unauthorized();
         }
-        if (current.getExpiresAt().isBefore(now)) {
+        if (!current.getExpiresAt().isAfter(now)) {
             current.setRevokedAt(now);
             current.setRevokedReason(RefreshSessionRevocationReason.EXPIRED);
             identityAuditService.record(IdentityAuditEventType.REFRESH_REJECTED, user.getId(), null, ipAddress, Map.of());
@@ -216,7 +216,7 @@ public class AuthServiceImpl implements AuthService {
         OffsetDateTime now = OffsetDateTime.now();
         RefreshSession session = refreshToken == null || refreshToken.isBlank()
                 ? null
-                : refreshSessionRepository.findByTokenHashForUpdate(hash(refreshToken)).orElse(null);
+                : lockRefreshSession(refreshToken);
         if (session != null) {
             refreshSessionRepository.revokeActiveByFamilyId(
                     session.getFamilyId(), now, RefreshSessionRevocationReason.LOGOUT);
@@ -239,6 +239,16 @@ public class AuthServiceImpl implements AuthService {
         return AuthResponse.withRefresh(
                 jwtService.generateToken(AuthenticatedUserPrincipal.from(user)),
                 jwtConfig.getExpiration(), UserResponse.from(user), refreshToken);
+    }
+
+    private RefreshSession lockRefreshSession(String token) {
+        String tokenHash = hash(token);
+        // Discover only the scalar ID so no stale User/Session enters the persistence context.
+        UUID userId = refreshSessionRepository.findUserIdByTokenHash(tokenHash).orElse(null);
+        if (userId == null || userRepository.findByIdWithLock(userId).isEmpty()) {
+            return null;
+        }
+        return refreshSessionRepository.findByTokenHashForUpdate(tokenHash).orElse(null);
     }
 
     private RefreshSession newSession(User user, String refreshToken, OffsetDateTime now, UUID familyId) {

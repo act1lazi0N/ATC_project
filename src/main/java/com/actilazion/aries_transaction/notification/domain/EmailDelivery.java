@@ -1,6 +1,8 @@
 package com.actilazion.aries_transaction.notification.domain;
 
 import com.actilazion.aries_transaction.identity.domain.EmailVerificationChallenge;
+import com.actilazion.aries_transaction.identity.domain.PasswordResetChallenge;
+import com.actilazion.aries_transaction.audit.domain.IdentityAuditLog;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -44,6 +46,14 @@ public class EmailDelivery {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "verification_challenge_id")
     private EmailVerificationChallenge verificationChallenge;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "password_reset_challenge_id")
+    private PasswordResetChallenge passwordResetChallenge;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "security_audit_event_id")
+    private IdentityAuditLog securityAuditEvent;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)

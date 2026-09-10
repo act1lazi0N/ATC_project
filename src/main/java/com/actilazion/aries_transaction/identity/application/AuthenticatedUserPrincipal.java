@@ -13,6 +13,7 @@ import java.util.UUID;
 @Getter
 public final class AuthenticatedUserPrincipal implements UserDetails {
     private final UUID userId;
+    private final long authVersion;
     private final String email;
     private final String passwordHash;
     private final Collection<? extends GrantedAuthority> authorities;
@@ -20,6 +21,7 @@ public final class AuthenticatedUserPrincipal implements UserDetails {
 
     private AuthenticatedUserPrincipal(User user) {
         this.userId = user.getId();
+        this.authVersion = user.getAuthVersion();
         this.email = user.getEmail();
         this.passwordHash = user.getPasswordHash();
         this.authorities = List.of(new SimpleGrantedAuthority("ROLE_" + user.getRole().name()));

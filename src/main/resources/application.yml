@@ -61,6 +61,19 @@ jwt:
   token-type: access
 
 security:
+  account-security:
+    enabled: ${ACCOUNT_SECURITY_ENABLED:false}
+    reset-signing-key: ${PASSWORD_RESET_SIGNING_KEY:}
+    reset-public-url: ${PASSWORD_RESET_PUBLIC_URL:}
+    reset-ttl: ${PASSWORD_RESET_TTL:PT15M}
+    forgot-email-requests: ${PASSWORD_FORGOT_EMAIL_REQUESTS:3}
+    forgot-ip-requests: ${PASSWORD_FORGOT_IP_REQUESTS:20}
+    forgot-window-seconds: ${PASSWORD_FORGOT_WINDOW_SECONDS:900}
+    resend-seconds: ${PASSWORD_RESET_RESEND_SECONDS:60}
+    minimum-response-millis: ${PASSWORD_FORGOT_MINIMUM_RESPONSE_MILLIS:200}
+    retention-days: ${PASSWORD_RESET_RETENTION_DAYS:30}
+    cleanup-enabled: ${PASSWORD_RESET_CLEANUP_ENABLED:true}
+    cleanup-interval-ms: ${PASSWORD_RESET_CLEANUP_INTERVAL_MS:3600000}
   ephemeral:
     enabled: ${SECURITY_EPHEMERAL_ENABLED:true}
     key-prefix: ${SECURITY_EPHEMERAL_KEY_PREFIX:aries:transaction:dev:v1}

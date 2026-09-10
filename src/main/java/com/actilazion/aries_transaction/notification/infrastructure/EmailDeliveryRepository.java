@@ -18,6 +18,29 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface EmailDeliveryRepository extends JpaRepository<EmailDelivery, UUID> {
+    @Modifying
+    @Query(value = """
+            UPDATE email_deliveries d SET status = 'CANCELLED', next_attempt_at = NULL,
+                claim_token = NULL, last_error_code = 'PASSWORD_RESET_UNUSABLE'
+            FROM password_reset_challenges c, users u
+            WHERE d.password_reset_challenge_id = c.id AND c.user_id = u.id
+              AND d.status IN ('PENDING', 'FAILED', 'DEAD_LETTERED')
+              AND (c.expires_at <= :now OR c.consumed_at IS NOT NULL OR c.invalidated_at IS NOT NULL
+                   OR NOT u.is_active OR c.email <> u.email)
+            """, nativeQuery = true)
+    int cancelUnusablePasswordResets(@Param("now") OffsetDateTime now);
+
+    @Modifying
+    @Query(value = """
+            DELETE FROM email_deliveries d
+            WHERE d.status IN ('DELIVERED', 'CANCELLED') AND d.updated_at < :cutoff
+              AND (d.purpose = 'PASSWORD_CHANGED' OR
+                (d.purpose = 'PASSWORD_RESET' AND EXISTS (
+                  SELECT 1 FROM password_reset_challenges c WHERE c.id = d.password_reset_challenge_id
+                    AND GREATEST(c.expires_at, c.consumed_at, c.invalidated_at) < :cutoff)))
+            """, nativeQuery = true)
+    int deleteResolvedSecurityEmailsBefore(@Param("cutoff") OffsetDateTime cutoff);
+
     @Query("""
             SELECT delivery.id
             FROM EmailDelivery delivery

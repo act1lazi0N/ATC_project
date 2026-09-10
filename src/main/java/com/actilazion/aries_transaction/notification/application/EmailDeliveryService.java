@@ -166,6 +166,10 @@ public class EmailDeliveryService {
         if (delivery.getStatus() != EmailDeliveryStatus.DEAD_LETTERED) {
             throw new EmailDeliveryRedriveConflictException();
         }
+        if (delivery.getPurpose() == EmailDeliveryPurpose.PASSWORD_RESET
+                && cancellationReason(delivery, OffsetDateTime.now()) != null) {
+            throw new EmailDeliveryRedriveConflictException();
+        }
         delivery.setStatus(EmailDeliveryStatus.PENDING);
         delivery.setCycleAttemptCount(0);
         delivery.setRedriveCount(delivery.getRedriveCount() + 1);
@@ -193,6 +197,12 @@ public class EmailDeliveryService {
     }
 
     private String cancellationReason(EmailDelivery delivery, OffsetDateTime now) {
+        if (delivery.getPurpose() == EmailDeliveryPurpose.PASSWORD_RESET) {
+            return delivery.getPasswordResetChallenge().isUsableAt(now) ? null : "PASSWORD_RESET_UNUSABLE";
+        }
+        if (delivery.getPurpose() == EmailDeliveryPurpose.PASSWORD_CHANGED) {
+            return userRepository.existsById(delivery.getSecurityAuditEvent().getUserId()) ? null : "USER_NOT_FOUND";
+        }
         if (delivery.getPurpose() == EmailDeliveryPurpose.EMAIL_VERIFICATION) {
             EmailVerificationChallenge challenge = delivery.getVerificationChallenge();
             if (!Boolean.TRUE.equals(challenge.getUser().getIsActive())) {
@@ -258,6 +268,12 @@ public class EmailDeliveryService {
     }
 
     private UUID recipientId(EmailDelivery delivery) {
+        if (delivery.getPasswordResetChallenge() != null) {
+            return delivery.getPasswordResetChallenge().getUser().getId();
+        }
+        if (delivery.getSecurityAuditEvent() != null) {
+            return delivery.getSecurityAuditEvent().getUserId();
+        }
         return delivery.getNotification() != null
                 ? delivery.getNotification().getRecipient().getId()
                 : delivery.getVerificationChallenge().getUser().getId();

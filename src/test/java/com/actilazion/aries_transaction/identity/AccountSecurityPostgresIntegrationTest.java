@@ -152,7 +152,14 @@ class AccountSecurityPostgresIntegrationTest extends PostgresIntegrationTestSupp
                 assertThat(response).doesNotContain(email);
             }
             mvc.perform(postJson("forgot-password", "{\"email\":\"" + email + "\"}"))
-                    .andExpect(status().isTooManyRequests()).andExpect(header().exists("Retry-After"));
+                    .andExpect(status().isTooManyRequests())
+                    .andExpect(jsonPath("$.code").value("RATE_LIMITED"))
+                    .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:3000"))
+                    .andExpect(header().string("Access-Control-Allow-Credentials", "true"))
+                    .andExpect(header().string("Access-Control-Expose-Headers",
+                            org.hamcrest.Matchers.containsString("Retry-After")))
+                    .andExpect(result -> assertThat(Integer.parseInt(result.getResponse().getHeader("Retry-After")))
+                            .isPositive());
         }
         assertThat(challenges.findAllByUser_IdOrderByCreatedAtDesc(active.user().id())).hasSize(1);
         assertThat(challenges.findAllByUser_IdOrderByCreatedAtDesc(suspended.user().id())).isEmpty();

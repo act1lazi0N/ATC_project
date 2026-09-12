@@ -12,7 +12,7 @@ public final class PasswordPolicy {
         if (password == null || password.isBlank() || password.length() < 8
                 || password.getBytes(StandardCharsets.UTF_8).length > 72) {
             throw new AccountSecurityException("VALIDATION_ERROR",
-                    "Password must be 8-72 characters",
+                    "Password must contain at least 8 characters and at most 72 UTF-8 bytes",
                     HttpStatus.BAD_REQUEST);
         }
     }

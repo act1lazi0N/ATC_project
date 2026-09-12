@@ -69,7 +69,7 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(refreshCookiePolicy.allowedOriginList());
         configuration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(java.util.List.of("Authorization", "Content-Type", "Accept", "Origin"));
-        configuration.setExposedHeaders(java.util.List.of("Location", "WWW-Authenticate"));
+        configuration.setExposedHeaders(java.util.List.of("Location", "WWW-Authenticate", "Retry-After"));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

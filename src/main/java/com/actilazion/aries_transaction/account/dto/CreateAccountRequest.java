@@ -9,17 +9,17 @@ import tools.jackson.databind.annotation.JsonDeserialize;
 
 @JsonDeserialize(using = CreateAccountRequestDeserializer.class)
 public record CreateAccountRequest(
-        @NotNull(message = "accountType is required")
+        @NotNull(message = "Account type is required")
         AccountType accountType,
 
-        @NotBlank(message = "currency is required")
-        @Pattern(regexp = "^[A-Z]{3}$", message = "currency must be a 3-letter ISO code, e.g. VND")
+        @NotBlank(message = "Currency is required")
+        @Pattern(regexp = "^[A-Z]{3}$", message = "Currency must be a 3-letter ISO code, e.g. VND")
         String currency,
 
         @Size(max = 255)
         String description,
 
-        @jakarta.validation.constraints.NotBlank(message = "idempotencyKey is required")
+        @jakarta.validation.constraints.NotBlank(message = "Idempotency key is required")
         @jakarta.validation.constraints.Size(min = 16, max = 64)
         String idempotencyKey
 ) {

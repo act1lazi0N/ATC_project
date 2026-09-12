@@ -50,7 +50,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    @Operation(summary = "Login an receive a JWT token")
+    @Operation(summary = "Login and receive a JWT token")
     public ResponseEntity<ApiResponse<AuthResponse>> login(
             @Valid @RequestBody LoginRequest request,
             HttpServletRequest httpRequest

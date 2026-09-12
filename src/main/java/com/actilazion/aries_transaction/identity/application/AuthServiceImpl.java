@@ -302,7 +302,7 @@ public class AuthServiceImpl implements AuthService {
 
     private void validatePasswordLength(String password) {
         if (password.getBytes(StandardCharsets.UTF_8).length > 72) {
-            throw new AppException("Password must not exceed 72 UTF-8 bytes", HttpStatus.BAD_REQUEST) {};
+            throw new AppException("Password must not exceed 72 characters", HttpStatus.BAD_REQUEST) {};
         }
     }
 

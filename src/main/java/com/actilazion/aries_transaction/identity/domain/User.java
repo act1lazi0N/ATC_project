@@ -50,6 +50,10 @@ public class User {
     @Builder.Default
     private long version = 0L;
 
+    @Column(name = "auth_version", nullable = false)
+    @Builder.Default
+    private long authVersion = 0L;
+
     @Column(name = "failed_login_attempts", nullable = false)
     @Builder.Default
     private int failedLoginAttempts = 0;

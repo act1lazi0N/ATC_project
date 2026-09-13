@@ -1,6 +1,9 @@
 package com.actilazion.aries_transaction.notification.application;
 
 import com.actilazion.aries_transaction.identity.application.EmailVerificationTokenService;
+import com.actilazion.aries_transaction.identity.application.PasswordResetTokenService;
+import com.actilazion.aries_transaction.identity.application.AccountSecurityProperties;
+import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
 import com.actilazion.aries_transaction.identity.domain.EmailVerificationChallenge;
 import com.actilazion.aries_transaction.notification.domain.EmailDelivery;
 import com.actilazion.aries_transaction.notification.domain.Notification;
@@ -15,17 +18,49 @@ import java.nio.charset.StandardCharsets;
 public class EmailTemplateRenderer {
     private final NotificationProperties properties;
     private final EmailVerificationTokenService tokenService;
+    private final PasswordResetTokenService resetTokens;
+    private final AccountSecurityProperties accountSecurity;
+    private final UserRepository users;
 
-    public EmailTemplateRenderer(NotificationProperties properties, EmailVerificationTokenService tokenService) {
+    public EmailTemplateRenderer(NotificationProperties properties, EmailVerificationTokenService tokenService,
+                                 PasswordResetTokenService resetTokens, AccountSecurityProperties accountSecurity,
+                                 UserRepository users) {
         this.properties = properties;
         this.tokenService = tokenService;
+        this.resetTokens = resetTokens;
+        this.accountSecurity = accountSecurity;
+        this.users = users;
     }
 
     public EmailMessage render(EmailDelivery delivery) {
         return switch (delivery.getPurpose()) {
             case EMAIL_VERIFICATION -> verification(delivery, delivery.getVerificationChallenge());
+            case PASSWORD_RESET -> passwordReset(delivery);
+            case PASSWORD_CHANGED -> passwordChanged(delivery);
             case TRANSACTION_NOTIFICATION, WEBHOOK_ALERT -> notification(delivery, delivery.getNotification());
         };
+    }
+
+    private EmailMessage passwordReset(EmailDelivery delivery) {
+        var challenge = delivery.getPasswordResetChallenge();
+        String url = accountSecurity.getResetPublicUrl() + "?token="
+                + URLEncoder.encode(resetTokens.tokenFor(challenge), StandardCharsets.UTF_8);
+        String text = "Reset your Aries password: " + url + "\nThis link expires at "
+                + challenge.getExpiresAt() + ". If you did not request this, ignore this email.";
+        String html = "<p>Reset your Aries password:</p><p><a href=\"" + HtmlUtils.htmlEscape(url)
+                + "\">Reset password</a></p><p>This link expires at "
+                + HtmlUtils.htmlEscape(challenge.getExpiresAt().toString())
+                + ". If you did not request this, ignore this email.</p>";
+        return message(delivery, challenge.getEmail(), "Reset your Aries password", text, html);
+    }
+
+    private EmailMessage passwordChanged(EmailDelivery delivery) {
+        var event = delivery.getSecurityAuditEvent();
+        var recipient = users.findById(event.getUserId()).orElseThrow();
+        String text = "Your Aries password was changed at " + event.getCreatedAt()
+                + ". All existing sessions were revoked. If this was not you, recover your account and contact support.";
+        return message(delivery, recipient.getEmail(), "Your Aries password was changed", text,
+                "<p>" + HtmlUtils.htmlEscape(text) + "</p>");
     }
 
     private EmailMessage verification(EmailDelivery delivery, EmailVerificationChallenge challenge) {

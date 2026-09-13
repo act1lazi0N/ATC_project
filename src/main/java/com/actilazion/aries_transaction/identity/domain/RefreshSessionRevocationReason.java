@@ -5,5 +5,8 @@ public enum RefreshSessionRevocationReason {
     LOGOUT,
     EXPIRED,
     SECURITY_REUSE,
-    ADMIN_REVOKED
+    ADMIN_REVOKED,
+    PASSWORD_CHANGED,
+    PASSWORD_RESET,
+    LOGOUT_ALL
 }

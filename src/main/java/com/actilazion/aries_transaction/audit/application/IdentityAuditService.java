@@ -21,6 +21,14 @@ import java.util.UUID;
 public class IdentityAuditService {
     private final IdentityAuditLogRepository repository;
 
+    @Transactional(propagation = Propagation.MANDATORY)
+    public IdentityAuditLog recordCommitted(IdentityAuditEventType eventType, UUID userId, String ipAddress,
+                                            Map<String, Object> metadata) {
+        return repository.save(IdentityAuditLog.builder()
+                .userId(userId).eventType(eventType).ipAddress(ipAddress)
+                .metadata(metadata == null ? Map.of() : Map.copyOf(metadata)).build());
+    }
+
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(IdentityAuditEventType eventType, UUID userId, String identity, String ipAddress,
                        Map<String, Object> metadata) {

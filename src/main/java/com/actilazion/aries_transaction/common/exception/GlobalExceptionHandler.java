@@ -23,7 +23,11 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(AppException.class)
     public ResponseEntity<ErrorResponse> handleAppException(AppException ex) {
-        return noStore(ex.getHttpStatus())
+        var response = noStore(ex.getHttpStatus());
+        if (ex.getHttpStatus() == HttpStatus.UNAUTHORIZED) {
+            response.header("WWW-Authenticate", "Bearer");
+        }
+        return response
                 .body(new ErrorResponse(
                         ex.getHttpStatus().value(),
                         ex.getMessage(),
@@ -133,6 +137,9 @@ public class GlobalExceptionHandler {
     }
 
     private String errorCode(AppException ex) {
+        if (ex instanceof com.actilazion.aries_transaction.identity.domain.exception.AccountSecurityException security) {
+            return security.getCode();
+        }
         return ex.getClass().getSimpleName()
                 .replaceAll("Exception$", "")
                 .replaceAll("([a-z])([A-Z])", "$1_$2")

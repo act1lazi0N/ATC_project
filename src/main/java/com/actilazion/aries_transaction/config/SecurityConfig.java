@@ -50,7 +50,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, SecurityEndpoints.REGISTER, SecurityEndpoints.LOGIN,
                                 SecurityEndpoints.REFRESH, SecurityEndpoints.LOGOUT,
-                                SecurityEndpoints.EMAIL_VERIFICATION_CONFIRM).permitAll()
+                                SecurityEndpoints.EMAIL_VERIFICATION_CONFIRM, SecurityEndpoints.FORGOT_PASSWORD,
+                                SecurityEndpoints.RESET_PASSWORD).permitAll()
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .requestMatchers("/v3/api-docs/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
@@ -68,7 +69,7 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(refreshCookiePolicy.allowedOriginList());
         configuration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(java.util.List.of("Authorization", "Content-Type", "Accept", "Origin"));
-        configuration.setExposedHeaders(java.util.List.of("Location", "WWW-Authenticate"));
+        configuration.setExposedHeaders(java.util.List.of("Location", "WWW-Authenticate", "Retry-After"));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

@@ -35,7 +35,9 @@ public class JwtService {
     }
 
     public String generateToken(AuthenticatedUserPrincipal principal) {
-        return generateToken(new HashMap<>(), principal.getUserId().toString());
+        HashMap<String, Object> claims = new HashMap<>();
+        claims.put("authVersion", principal.getAuthVersion());
+        return generateToken(claims, principal.getUserId().toString());
     }
 
     public String extractUsername(String token) {
@@ -51,7 +53,20 @@ public class JwtService {
     }
 
     public boolean isTokenValid(String token, AuthenticatedUserPrincipal principal) {
-        return principal.getUserId().equals(extractUserId(token));
+        return extractClaim(token, claims -> principal.getUserId().toString().equals(claims.getSubject())
+                && authVersion(claims) == principal.getAuthVersion());
+    }
+
+    private long authVersion(Claims claims) {
+        // Signed pre-upgrade tokens are valid only until the user's first revocation.
+        if (!claims.containsKey("authVersion")) {
+            return 0;
+        }
+        Object value = claims.get("authVersion");
+        if (!(value instanceof Integer || value instanceof Long) || ((Number) value).longValue() < 0) {
+            throw new IllegalArgumentException("JWT auth version is invalid");
+        }
+        return ((Number) value).longValue();
     }
 
     private String generateToken(HashMap<String, Object> claims, String subject) {

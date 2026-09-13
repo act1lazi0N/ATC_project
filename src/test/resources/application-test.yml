@@ -33,6 +33,9 @@ jwt:
   token-type: access
 
 security:
+  account-security:
+    enabled: false
+    cleanup-enabled: false
   ephemeral:
     enabled: false
     key-prefix: aries:transaction:test:v1

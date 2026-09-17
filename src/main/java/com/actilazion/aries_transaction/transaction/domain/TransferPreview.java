@@ -14,10 +14,15 @@ import java.util.UUID;
 @Table(name = "transfer_previews")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class TransferPreview {
+    @Column(name = "smart_otp_bound", nullable = false)
+    private boolean smartOtpBound;
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(updatable = false, nullable = false)
     private UUID id;
+
+    @Column(name = "qr_code_id", updatable = false)
+    private UUID qrCodeId;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "initiator_id", nullable = false)

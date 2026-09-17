@@ -58,7 +58,8 @@ import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 
 @DataJpaTest(showSql = false)
 @ActiveProfiles("test")
-@Import({TransferServiceImpl.class, AuditLogService.class, OutboxEventService.class, LedgerServiceImpl.class, IdempotencyService.class})
+@Import({TransferServiceImpl.class, AuditLogService.class, OutboxEventService.class, LedgerServiceImpl.class, IdempotencyService.class,
+        com.actilazion.aries_transaction.support.SmartOtpDisabledSliceConfiguration.class})
 public class TransferServiceIntegrationTest {
     @Autowired
     TestEntityManager em;

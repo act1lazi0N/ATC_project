@@ -68,7 +68,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(refreshCookiePolicy.allowedOriginList());
         configuration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(java.util.List.of("Authorization", "Content-Type", "Accept", "Origin"));
+        configuration.setAllowedHeaders(java.util.List.of("Authorization", "Content-Type", "Accept", "Origin", "Idempotency-Key"));
         configuration.setExposedHeaders(java.util.List.of("Location", "WWW-Authenticate", "Retry-After"));
         configuration.setAllowCredentials(true);
 

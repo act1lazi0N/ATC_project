@@ -6,11 +6,17 @@ import jakarta.validation.constraints.*;
 import java.util.UUID;
 
 public record TransferPreviewRequest(
-        @NotNull TransferPreviewMode mode,
+        TransferPreviewMode mode,
         @NotNull UUID sourceAccountId,
         UUID toAccountId,
         String recipientAccountNumber,
-        @NotBlank @Pattern(regexp = "^\\d{1,16}(\\.\\d+)?$", message = "amount must be a decimal string") String amount,
-        @NotBlank @Pattern(regexp = "^[A-Z]{3}$") String currency,
-        @Size(max = 255) String description
-) {}
+        @Size(max = 64) @Pattern(regexp = "^\\d{1,16}(\\.\\d+)?$", message = "amount must be a decimal string") String amount,
+        @Pattern(regexp = "^[A-Z]{3}$") String currency,
+        @Size(max = 255) String description,
+        UUID qrCodeId
+) {
+    public TransferPreviewRequest(TransferPreviewMode mode, UUID sourceAccountId, UUID toAccountId,
+                                  String recipientAccountNumber, String amount, String currency, String description) {
+        this(mode, sourceAccountId, toAccountId, recipientAccountNumber, amount, currency, description, null);
+    }
+}

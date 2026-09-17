@@ -200,7 +200,8 @@ public class EmailDeliveryService {
         if (delivery.getPurpose() == EmailDeliveryPurpose.PASSWORD_RESET) {
             return delivery.getPasswordResetChallenge().isUsableAt(now) ? null : "PASSWORD_RESET_UNUSABLE";
         }
-        if (delivery.getPurpose() == EmailDeliveryPurpose.PASSWORD_CHANGED) {
+        if (delivery.getPurpose() == EmailDeliveryPurpose.PASSWORD_CHANGED
+                || delivery.getPurpose() == EmailDeliveryPurpose.SMART_OTP_SECURITY) {
             return userRepository.existsById(delivery.getSecurityAuditEvent().getUserId()) ? null : "USER_NOT_FOUND";
         }
         if (delivery.getPurpose() == EmailDeliveryPurpose.EMAIL_VERIFICATION) {

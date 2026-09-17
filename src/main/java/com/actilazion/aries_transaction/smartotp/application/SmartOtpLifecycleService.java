@@ -1,13 +1,13 @@
-package com.actilazion.aries_transaction.identity.smartotp.application;
+package com.actilazion.aries_transaction.smartotp.application;
 
 import com.actilazion.aries_transaction.audit.application.IdentityAuditService;
 import com.actilazion.aries_transaction.audit.domain.IdentityAuditEventType;
 import com.actilazion.aries_transaction.identity.application.*;
 import com.actilazion.aries_transaction.identity.domain.*;
-import com.actilazion.aries_transaction.identity.smartotp.domain.*;
-import com.actilazion.aries_transaction.identity.smartotp.dto.SmartOtpDtos.*;
-import com.actilazion.aries_transaction.identity.smartotp.infrastructure.SmartOtpRepository;
-import com.actilazion.aries_transaction.identity.smartotp.infrastructure.SmartOtpRepository.*;
+import com.actilazion.aries_transaction.smartotp.domain.*;
+import com.actilazion.aries_transaction.smartotp.dto.SmartOtpDtos.*;
+import com.actilazion.aries_transaction.smartotp.infrastructure.SmartOtpRepository;
+import com.actilazion.aries_transaction.smartotp.infrastructure.SmartOtpRepository.*;
 import com.actilazion.aries_transaction.notification.domain.*;
 import com.actilazion.aries_transaction.notification.infrastructure.EmailDeliveryRepository;
 import lombok.RequiredArgsConstructor;

@@ -64,7 +64,7 @@ public class TransferServiceImpl implements TransferService {
     private final LedgerService ledgerService;
     private final TransferPreviewRepository transferPreviewRepository;
     private final PaymentQrRepository paymentQrRepository;
-    private final com.actilazion.aries_transaction.identity.smartotp.application.SmartOtpTransferGuard smartOtp;
+    private final com.actilazion.aries_transaction.smartotp.application.SmartOtpTransferGuard smartOtp;
 
     @Override
     @Transactional

@@ -1,4 +1,4 @@
-package com.actilazion.aries_transaction.identity.smartotp.domain;
+package com.actilazion.aries_transaction.smartotp.domain;
 
 import org.junit.jupiter.api.Test;
 import java.nio.charset.StandardCharsets;

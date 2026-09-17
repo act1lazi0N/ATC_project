@@ -1,4 +1,4 @@
-package com.actilazion.aries_transaction.identity.smartotp.application;
+package com.actilazion.aries_transaction.smartotp.application;
 
 import lombok.Getter;
 import lombok.Setter;

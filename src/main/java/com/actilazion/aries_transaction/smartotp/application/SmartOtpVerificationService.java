@@ -1,10 +1,10 @@
-package com.actilazion.aries_transaction.identity.smartotp.application;
+package com.actilazion.aries_transaction.smartotp.application;
 
 import com.actilazion.aries_transaction.audit.application.IdentityAuditService;
 import com.actilazion.aries_transaction.audit.domain.IdentityAuditEventType;
 import com.actilazion.aries_transaction.identity.application.*;
-import com.actilazion.aries_transaction.identity.smartotp.domain.*;
-import com.actilazion.aries_transaction.identity.smartotp.infrastructure.SmartOtpRepository;
+import com.actilazion.aries_transaction.smartotp.domain.*;
+import com.actilazion.aries_transaction.smartotp.infrastructure.SmartOtpRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;

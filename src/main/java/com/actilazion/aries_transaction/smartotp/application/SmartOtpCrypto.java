@@ -1,6 +1,6 @@
-package com.actilazion.aries_transaction.identity.smartotp.application;
+package com.actilazion.aries_transaction.smartotp.application;
 
-import com.actilazion.aries_transaction.identity.smartotp.domain.SmartOtpException;
+import com.actilazion.aries_transaction.smartotp.domain.SmartOtpException;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;

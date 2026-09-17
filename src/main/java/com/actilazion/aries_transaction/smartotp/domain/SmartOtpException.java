@@ -1,4 +1,4 @@
-package com.actilazion.aries_transaction.identity.smartotp.domain;
+package com.actilazion.aries_transaction.smartotp.domain;
 
 import com.actilazion.aries_transaction.identity.domain.exception.AccountSecurityException;
 import org.springframework.http.HttpStatus;

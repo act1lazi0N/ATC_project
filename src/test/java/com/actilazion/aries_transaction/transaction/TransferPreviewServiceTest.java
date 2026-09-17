@@ -35,7 +35,7 @@ class TransferPreviewServiceTest {
     @Mock UserRepository userRepository;
     @Mock TransferPreviewRepository previewRepository;
     @Mock AuditLogService auditLogService;
-    @Mock com.actilazion.aries_transaction.identity.smartotp.application.SmartOtpTransferGuard smartOtp;
+    @Mock com.actilazion.aries_transaction.smartotp.application.SmartOtpTransferGuard smartOtp;
     @Spy TransferPreviewProperties properties = new TransferPreviewProperties();
     @InjectMocks TransferPreviewServiceImpl service;
 

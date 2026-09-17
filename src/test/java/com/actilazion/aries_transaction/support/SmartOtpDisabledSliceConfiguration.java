@@ -1,8 +1,8 @@
 package com.actilazion.aries_transaction.support;
 
 import com.actilazion.aries_transaction.identity.application.SessionRevocationService;
-import com.actilazion.aries_transaction.identity.smartotp.application.*;
-import com.actilazion.aries_transaction.identity.smartotp.infrastructure.SmartOtpRepository;
+import com.actilazion.aries_transaction.smartotp.application.*;
+import com.actilazion.aries_transaction.smartotp.infrastructure.SmartOtpRepository;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;

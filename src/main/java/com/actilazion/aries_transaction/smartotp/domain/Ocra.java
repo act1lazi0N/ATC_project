@@ -1,4 +1,4 @@
-package com.actilazion.aries_transaction.identity.smartotp.domain;
+package com.actilazion.aries_transaction.smartotp.domain;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;

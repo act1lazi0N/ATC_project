@@ -1,4 +1,4 @@
-package com.actilazion.aries_transaction.identity.smartotp;
+package com.actilazion.aries_transaction.smartotp;
 
 import com.actilazion.aries_transaction.account.domain.*;
 import com.actilazion.aries_transaction.account.infrastructure.AccountRepository;
@@ -6,9 +6,9 @@ import com.actilazion.aries_transaction.config.JwtService;
 import com.actilazion.aries_transaction.identity.application.*;
 import com.actilazion.aries_transaction.identity.domain.*;
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
-import com.actilazion.aries_transaction.identity.smartotp.application.*;
-import com.actilazion.aries_transaction.identity.smartotp.domain.*;
-import com.actilazion.aries_transaction.identity.smartotp.dto.SmartOtpDtos.*;
+import com.actilazion.aries_transaction.smartotp.application.*;
+import com.actilazion.aries_transaction.smartotp.domain.*;
+import com.actilazion.aries_transaction.smartotp.dto.SmartOtpDtos.*;
 import com.actilazion.aries_transaction.notification.application.EmailDeliveryService;
 import com.actilazion.aries_transaction.payment.application.PaymentQrService;
 import com.actilazion.aries_transaction.payment.domain.QrType;

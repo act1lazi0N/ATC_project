@@ -1,12 +1,12 @@
-package com.actilazion.aries_transaction.identity.smartotp.application;
+package com.actilazion.aries_transaction.smartotp.application;
 
 import com.actilazion.aries_transaction.account.domain.Account;
 import com.actilazion.aries_transaction.identity.application.AuthenticatedUserPrincipal;
 import com.actilazion.aries_transaction.identity.domain.User;
 import com.actilazion.aries_transaction.identity.domain.exception.UnauthorizedException;
-import com.actilazion.aries_transaction.identity.smartotp.domain.*;
-import com.actilazion.aries_transaction.identity.smartotp.infrastructure.SmartOtpRepository;
-import com.actilazion.aries_transaction.identity.smartotp.infrastructure.SmartOtpRepository.Credential;
+import com.actilazion.aries_transaction.smartotp.domain.*;
+import com.actilazion.aries_transaction.smartotp.infrastructure.SmartOtpRepository;
+import com.actilazion.aries_transaction.smartotp.infrastructure.SmartOtpRepository.Credential;
 import com.actilazion.aries_transaction.transaction.domain.TransferPreview;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.context.SecurityContextHolder;

@@ -1,6 +1,6 @@
-package com.actilazion.aries_transaction.identity.smartotp.dto;
+package com.actilazion.aries_transaction.smartotp.dto;
 
-import com.actilazion.aries_transaction.identity.smartotp.domain.OtpPurpose;
+import com.actilazion.aries_transaction.smartotp.domain.OtpPurpose;
 import jakarta.validation.constraints.*;
 import java.time.OffsetDateTime;
 import java.util.*;

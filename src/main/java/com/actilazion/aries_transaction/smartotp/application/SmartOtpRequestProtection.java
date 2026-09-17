@@ -1,4 +1,4 @@
-package com.actilazion.aries_transaction.identity.smartotp.application;
+package com.actilazion.aries_transaction.smartotp.application;
 
 import com.actilazion.aries_transaction.common.exception.RateLimitExceededException;
 import com.actilazion.aries_transaction.common.redis.AuthRateLimitStore;

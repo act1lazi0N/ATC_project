@@ -1,7 +1,7 @@
-package com.actilazion.aries_transaction.identity.smartotp.application;
+package com.actilazion.aries_transaction.smartotp.application;
 
 import com.actilazion.aries_transaction.identity.infrastructure.UserRepository;
-import com.actilazion.aries_transaction.identity.smartotp.infrastructure.SmartOtpRepository;
+import com.actilazion.aries_transaction.smartotp.infrastructure.SmartOtpRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;

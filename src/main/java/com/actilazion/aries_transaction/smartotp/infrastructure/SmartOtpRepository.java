@@ -1,6 +1,6 @@
-package com.actilazion.aries_transaction.identity.smartotp.infrastructure;
+package com.actilazion.aries_transaction.smartotp.infrastructure;
 
-import com.actilazion.aries_transaction.identity.smartotp.domain.OtpPurpose;
+import com.actilazion.aries_transaction.smartotp.domain.OtpPurpose;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;

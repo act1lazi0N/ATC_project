@@ -40,7 +40,7 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
     private final TransferPreviewProperties properties;
     private final AuditLogService auditLogService;
     private final PaymentQrService paymentQrService;
-    private final com.actilazion.aries_transaction.identity.smartotp.application.SmartOtpTransferGuard smartOtp;
+    private final com.actilazion.aries_transaction.smartotp.application.SmartOtpTransferGuard smartOtp;
 
     @Override
     @Transactional

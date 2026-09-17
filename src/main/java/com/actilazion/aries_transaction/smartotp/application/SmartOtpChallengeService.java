@@ -1,12 +1,12 @@
-package com.actilazion.aries_transaction.identity.smartotp.application;
+package com.actilazion.aries_transaction.smartotp.application;
 
 import com.actilazion.aries_transaction.account.application.AccountPartyMasking;
 import com.actilazion.aries_transaction.identity.application.*;
 import com.actilazion.aries_transaction.identity.domain.User;
-import com.actilazion.aries_transaction.identity.smartotp.domain.*;
-import com.actilazion.aries_transaction.identity.smartotp.dto.SmartOtpDtos.ChallengeView;
-import com.actilazion.aries_transaction.identity.smartotp.infrastructure.SmartOtpRepository;
-import com.actilazion.aries_transaction.identity.smartotp.infrastructure.SmartOtpRepository.*;
+import com.actilazion.aries_transaction.smartotp.domain.*;
+import com.actilazion.aries_transaction.smartotp.dto.SmartOtpDtos.ChallengeView;
+import com.actilazion.aries_transaction.smartotp.infrastructure.SmartOtpRepository;
+import com.actilazion.aries_transaction.smartotp.infrastructure.SmartOtpRepository.*;
 import com.actilazion.aries_transaction.transaction.domain.TransferPreview;
 import com.actilazion.aries_transaction.transaction.infrastructure.TransferPreviewRepository;
 import lombok.RequiredArgsConstructor;

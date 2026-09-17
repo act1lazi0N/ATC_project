@@ -1,10 +1,10 @@
-package com.actilazion.aries_transaction.identity.smartotp.api;
+package com.actilazion.aries_transaction.smartotp.api;
 
 import com.actilazion.aries_transaction.common.dto.ApiResponse;
 import com.actilazion.aries_transaction.identity.application.AuthenticatedUserPrincipal;
-import com.actilazion.aries_transaction.identity.smartotp.application.*;
-import com.actilazion.aries_transaction.identity.smartotp.domain.OtpPurpose;
-import com.actilazion.aries_transaction.identity.smartotp.dto.SmartOtpDtos.*;
+import com.actilazion.aries_transaction.smartotp.application.*;
+import com.actilazion.aries_transaction.smartotp.domain.OtpPurpose;
+import com.actilazion.aries_transaction.smartotp.dto.SmartOtpDtos.*;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;

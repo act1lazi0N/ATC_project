@@ -1,7 +1,7 @@
-package com.actilazion.aries_transaction.identity.smartotp;
+package com.actilazion.aries_transaction.smartotp;
 
-import com.actilazion.aries_transaction.identity.smartotp.application.*;
-import com.actilazion.aries_transaction.identity.smartotp.domain.SmartOtpException;
+import com.actilazion.aries_transaction.smartotp.application.*;
+import com.actilazion.aries_transaction.smartotp.domain.SmartOtpException;
 import org.junit.jupiter.api.Test;
 import java.security.SecureRandom;
 import java.util.*;

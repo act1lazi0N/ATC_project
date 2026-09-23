@@ -51,6 +51,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @Import({
         com.actilazion.aries_transaction.support.SmartOtpDisabledSliceConfiguration.class,
         TransferServiceImpl.class,
+        com.actilazion.aries_transaction.transaction.application.TransactionCompensationService.class,
+        com.actilazion.aries_transaction.transaction.application.TransactionQueryService.class,
+        com.actilazion.aries_transaction.transaction.application.TransferActorAccess.class,
+        com.actilazion.aries_transaction.transaction.application.TransferAccountLocker.class,
+        com.actilazion.aries_transaction.payment.application.PaymentQrTransferGuard.class,
         AuditLogService.class,
         OutboxEventService.class,
         LedgerServiceImpl.class,

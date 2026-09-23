@@ -95,6 +95,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler({
             IllegalArgumentException.class,
+            org.springframework.web.bind.MissingRequestHeaderException.class,
             MethodArgumentTypeMismatchException.class,
             HttpMessageNotReadableException.class
     })
@@ -137,6 +138,9 @@ public class GlobalExceptionHandler {
     }
 
     private String errorCode(AppException ex) {
+        if (ex instanceof com.actilazion.aries_transaction.payment.domain.QrException qr) {
+            return qr.getCode();
+        }
         if (ex instanceof com.actilazion.aries_transaction.identity.domain.exception.AccountSecurityException security) {
             return security.getCode();
         }

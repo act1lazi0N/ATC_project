@@ -49,6 +49,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @DataJpaTest(showSql = false)
 @ActiveProfiles("test")
 @Import({
+        com.actilazion.aries_transaction.support.SmartOtpDisabledSliceConfiguration.class,
         TransferServiceImpl.class,
         AuditLogService.class,
         OutboxEventService.class,

@@ -11,10 +11,10 @@ import java.time.OffsetDateTime;
 
 public interface TransferPreviewRepository extends JpaRepository<TransferPreview, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select p from TransferPreview p join fetch p.sourceAccount join fetch p.destinationAccount where p.id = :id")
+    @Query("select p from TransferPreview p where p.id = :id")
     Optional<TransferPreview> findByIdWithLock(@Param("id") UUID id);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("delete from TransferPreview p where p.expiresAt < :cutoff")
+    @Query("delete from TransferPreview p where p.expiresAt < :cutoff and p.smartOtpBound = false and (p.qrCodeId is null or p.consumedAt is null)")
     int deleteExpiredBefore(@Param("cutoff") OffsetDateTime cutoff);
 }

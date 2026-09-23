@@ -27,6 +27,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
+import com.actilazion.aries_transaction.payment.application.PaymentQrService;
+import com.actilazion.aries_transaction.payment.domain.PaymentQrCode;
+import com.actilazion.aries_transaction.payment.domain.QrType;
 
 @Service
 @RequiredArgsConstructor
@@ -36,19 +39,55 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
     private final TransferPreviewRepository previewRepository;
     private final TransferPreviewProperties properties;
     private final AuditLogService auditLogService;
+    private final PaymentQrService paymentQrService;
+    private final com.actilazion.aries_transaction.smartotp.application.SmartOtpTransferGuard smartOtp;
 
     @Override
     @Transactional
     public TransferPreviewResponse create(TransferPreviewRequest request, String initiatorEmail) {
-        User initiator = userRepository.findByEmail(initiatorEmail)
+        if (request.qrCodeId() == null && (request.mode() == null || request.amount() == null
+                || request.amount().isBlank() || request.currency() == null || request.currency().isBlank())) {
+            throw new IllegalArgumentException("Manual preview requires mode, amount and currency");
+        }
+        User initiator = userRepository.findByEmailWithLock(initiatorEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User", initiatorEmail));
+        if (!Boolean.TRUE.equals(initiator.getIsActive())) {
+            throw new ForbiddenOperationException("User is not active");
+        }
         Account source = accountRepository.findById(request.sourceAccountId())
                 .orElseThrow(() -> new ResourceNotFoundException("Account", request.sourceAccountId()));
         if (!source.getUser().getId().equals(initiator.getId())) {
             throw new ForbiddenOperationException("Caller is not authorized for this source account");
         }
         Account destination;
-        if (request.mode() == TransferPreviewMode.EXTERNAL) {
+        PaymentQrCode qr = null;
+        String rawAmount = request.amount();
+        String currency = request.currency();
+        String description = request.description();
+        TransferPreviewMode mode = request.mode();
+        if (request.qrCodeId() != null) {
+            if (request.toAccountId() != null || request.recipientAccountNumber() != null) {
+                throw new IllegalArgumentException("QR preview cannot contain another recipient selector");
+            }
+            qr = paymentQrService.available(request.qrCodeId());
+            destination = accountRepository.findById(qr.getAccountId()).orElseThrow(RecipientUnavailableException::new);
+            mode = destination.getUser().getId().equals(initiator.getId()) ? TransferPreviewMode.OWN_ACCOUNTS : TransferPreviewMode.EXTERNAL;
+            if (request.mode() != null && request.mode() != mode) {
+                throw new IllegalArgumentException("QR preview mode does not match account ownership");
+            }
+            if (currency != null && !currency.equals(qr.getCurrency())) {
+                throw new CurrencyMismatchException("QR currency cannot be overridden");
+            }
+            currency = qr.getCurrency();
+            if (qr.getType() == QrType.PAYMENT_REQUEST) {
+                if (rawAmount != null || description != null) {
+                    throw new IllegalArgumentException("Payment request amount and description must be omitted");
+                }
+                rawAmount = qr.getAmount().toPlainString();
+                description = qr.getDescription();
+            }
+            if (!Boolean.TRUE.equals(destination.getUser().getIsActive())) throw new RecipientUnavailableException();
+        } else if (request.mode() == TransferPreviewMode.EXTERNAL) {
             if (request.toAccountId() != null || request.recipientAccountNumber() == null) {
                 throw new IllegalArgumentException("External preview requires recipientAccountNumber only");
             }
@@ -58,6 +97,9 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
                 throw new RecipientUnavailableException();
             }
         } else {
+            if (request.mode() != TransferPreviewMode.OWN_ACCOUNTS) {
+                throw new IllegalArgumentException("Manual preview requires mode");
+            }
             if (request.toAccountId() == null || request.recipientAccountNumber() != null) {
                 throw new IllegalArgumentException("Own-account preview requires toAccountId only");
             }
@@ -72,26 +114,30 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
         }
         validateActive(source);
         validateActive(destination);
-        if (!source.getCurrency().equals(destination.getCurrency()) || !source.getCurrency().equals(request.currency())) {
+        if (!source.getCurrency().equals(destination.getCurrency()) || !source.getCurrency().equals(currency)) {
             throw new CurrencyMismatchException("Transfer currency does not match both accounts");
         }
-        if (!"VND".equals(request.currency())) {
+        if (!"VND".equals(currency)) {
             throw new CurrencyMismatchException("Unsupported currency");
         }
-        BigDecimal amount = TransferAmountPolicy.normalize(request.amount());
+        BigDecimal amount = TransferAmountPolicy.normalize(rawAmount);
         if (source.getBalance().compareTo(amount) < 0) {
             throw new InsufficientBalanceException(source.getBalance(), amount);
         }
         OffsetDateTime expiresAt = OffsetDateTime.now().plusMinutes(properties.getTtlMinutes());
+        if (qr != null && qr.getExpiresAt() != null && qr.getExpiresAt().isBefore(expiresAt)) {
+            expiresAt = qr.getExpiresAt();
+        }
         TransferPreview preview = previewRepository.save(TransferPreview.builder()
                 .initiator(initiator)
                 .sourceAccount(source)
                 .destinationAccount(destination)
-                .mode(request.mode())
+                .mode(mode)
+                .qrCodeId(request.qrCodeId())
                 .amount(amount)
                 .fee(BigDecimal.ZERO.setScale(2))
-                .currency(request.currency())
-                .description(request.description())
+                .currency(currency)
+                .description(description)
                 .expiresAt(expiresAt)
                 .build());
         auditLogService.log(preview, AuditEventType.TRANSFER_PREVIEW_CREATED, initiatorEmail);
@@ -106,7 +152,9 @@ public class TransferPreviewServiceImpl implements TransferPreviewService {
         return new TransferPreviewResponse(preview.getId(), preview.getExpiresAt(),
                 masked(preview.getSourceAccount()), masked(preview.getDestinationAccount()),
                 preview.getAmount().toPlainString(), preview.getFee().toPlainString(),
-                preview.getAmount().add(preview.getFee()).toPlainString(), preview.getCurrency(), List.of());
+                preview.getAmount().add(preview.getFee()).toPlainString(), preview.getCurrency(), List.of(),
+                smartOtp.required(preview.getSourceAccount(), preview.getDestinationAccount()) ? "SMART_OTP" : "NONE",
+                smartOtp.enrollmentState(preview.getInitiator().getId()));
     }
 
     private TransferPreviewResponse.MaskedAccount masked(Account account) {

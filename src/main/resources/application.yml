@@ -96,6 +96,10 @@ springdoc:
     enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:false}
 
 app:
+  smart-otp:
+    mode: ${SMART_OTP_MODE:DISABLED}
+    key-id: ${SMART_OTP_KEY_ID:}
+    encryption-key: ${SMART_OTP_ENCRYPTION_KEY:}
   account:
     creation:
       max-active-accounts-per-user: ${ACCOUNT_MAX_ACTIVE_ACCOUNTS_PER_USER:5}

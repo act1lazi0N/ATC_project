@@ -35,6 +35,7 @@ class TransferPreviewServiceTest {
     @Mock UserRepository userRepository;
     @Mock TransferPreviewRepository previewRepository;
     @Mock AuditLogService auditLogService;
+    @Mock com.actilazion.aries_transaction.smartotp.application.SmartOtpTransferGuard smartOtp;
     @Spy TransferPreviewProperties properties = new TransferPreviewProperties();
     @InjectMocks TransferPreviewServiceImpl service;
 
@@ -44,7 +45,8 @@ class TransferPreviewServiceTest {
         User recipient = user("recipient@test.com", "Bob Recipient");
         Account source = account(owner, "100000000001", "1000000.00");
         Account destination = account(recipient, "100000000002", "0.00");
-        when(userRepository.findByEmail(owner.getEmail())).thenReturn(Optional.of(owner));
+        when(userRepository.findByEmailWithLock(owner.getEmail())).thenReturn(Optional.of(owner));
+        when(smartOtp.enrollmentState(owner.getId())).thenReturn("UNAVAILABLE");
         when(accountRepository.findById(source.getId())).thenReturn(Optional.of(source));
         when(accountRepository.findByAccountNumber(destination.getAccountNumber())).thenReturn(Optional.of(destination));
         when(previewRepository.save(any())).thenAnswer(invocation -> {

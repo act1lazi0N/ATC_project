@@ -7,5 +7,8 @@ import java.util.UUID;
 
 public record TransferExecuteRequest(
         @NotNull UUID previewId,
-        @NotBlank @Size(min = 16, max = 64) String idempotencyKey
-) {}
+        @NotBlank @Size(min = 16, max = 64) String idempotencyKey,
+        UUID authorizationId
+) {
+    public TransferExecuteRequest(UUID previewId, String idempotencyKey) { this(previewId, idempotencyKey, null); }
+}

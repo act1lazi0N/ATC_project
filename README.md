@@ -50,6 +50,8 @@ transaction      transfer, reversal, refund, idempotency, state guards
 - User registration and login with signed JWT access tokens.
 - Stateless Spring Security filter chain.
 - Transfer between two accounts with pessimistic account locking.
+- Internal reusable account QR and single-payment request QR through the existing preview/execute flow ([API contract](docs/PAYMENT_QR.md)).
+- Transaction-bound Smart OTP enrollment, recovery and authorization; disabled by default ([protocol and rollout](docs/SMART_OTP.md)).
 - Ownership checks for spending and transaction history reads.
 - Idempotency key handling for transfer, reversal, refund, and settlement batch creation.
 - Balanced ledger entries for transfer, reversal, refund, and settlement accounting.

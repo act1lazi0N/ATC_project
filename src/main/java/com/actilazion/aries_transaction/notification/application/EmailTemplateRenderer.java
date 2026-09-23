@@ -37,8 +37,19 @@ public class EmailTemplateRenderer {
             case EMAIL_VERIFICATION -> verification(delivery, delivery.getVerificationChallenge());
             case PASSWORD_RESET -> passwordReset(delivery);
             case PASSWORD_CHANGED -> passwordChanged(delivery);
+            case SMART_OTP_SECURITY -> smartOtpSecurity(delivery);
             case TRANSACTION_NOTIFICATION, WEBHOOK_ALERT -> notification(delivery, delivery.getNotification());
         };
+    }
+
+    private EmailMessage smartOtpSecurity(EmailDelivery delivery) {
+        var event = delivery.getSecurityAuditEvent();
+        var recipient = users.findById(event.getUserId()).orElseThrow();
+        String text = "Your Aries Smart OTP security settings changed at " + event.getCreatedAt()
+                + ". Action: " + event.getMetadata().get("action")
+                + ". If this was not you, recover your account and contact support.";
+        return message(delivery, recipient.getEmail(), "Aries Smart OTP security update", text,
+                "<p>" + HtmlUtils.htmlEscape(text) + "</p>");
     }
 
     private EmailMessage passwordReset(EmailDelivery delivery) {

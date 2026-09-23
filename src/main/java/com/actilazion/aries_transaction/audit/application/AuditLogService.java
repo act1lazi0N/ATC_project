@@ -18,6 +18,16 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AuditLogService {
     private final AuditLogRepository auditLogRepository;
+
+    public void log(com.actilazion.aries_transaction.payment.domain.PaymentQrCode qr, AuditEventType eventType, String actorId) {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("qrCodeId", qr.getId().toString());
+        payload.put("type", qr.getType().name());
+        payload.put("state", qr.getState().name());
+        if (qr.getTransactionId() != null) payload.put("transactionId", qr.getTransactionId().toString());
+        auditLogRepository.save(AuditLog.builder().accountId(qr.getAccountId()).eventType(eventType)
+                .actorId(actorId).payload(payload).build());
+    }
     public void log (Transaction tx, AuditEventType eventType, String actorId) {
         Map<String, Object> payload = buildPayload(tx);
 

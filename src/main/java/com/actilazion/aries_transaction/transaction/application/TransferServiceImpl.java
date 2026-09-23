@@ -46,6 +46,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
+import com.actilazion.aries_transaction.payment.domain.PaymentQrCode;
+import com.actilazion.aries_transaction.payment.domain.QrType;
+import com.actilazion.aries_transaction.payment.domain.QrException;
+import com.actilazion.aries_transaction.payment.infrastructure.PaymentQrRepository;
 
 @Slf4j
 @Service
@@ -59,11 +63,14 @@ public class TransferServiceImpl implements TransferService {
     private final OutboxEventService outboxEventService;
     private final LedgerService ledgerService;
     private final TransferPreviewRepository transferPreviewRepository;
+    private final PaymentQrRepository paymentQrRepository;
+    private final com.actilazion.aries_transaction.smartotp.application.SmartOtpTransferGuard smartOtp;
 
     @Override
     @Transactional
     public TransactionResponse execute(TransferExecuteRequest request, String initiatorEmail) {
         User initiator = lockInitiator(initiatorEmail);
+        var otpCredential = smartOtp.lockCredential(initiator);
         TransferPreview preview = transferPreviewRepository.findByIdWithLock(request.previewId())
                 .orElseThrow(() -> new ResourceNotFoundException("Transfer preview", request.previewId()));
         if (!preview.getInitiator().getId().equals(initiator.getId())) {
@@ -87,7 +94,29 @@ public class TransferServiceImpl implements TransferService {
         if (!preview.getExpiresAt().isAfter(OffsetDateTime.now())) {
             throw new TransferPreviewUnavailableException(TransferPreviewUnavailableException.Reason.EXPIRED);
         }
+        smartOtp.authorize(initiator, otpCredential, preview, request.idempotencyKey(), request.authorizationId());
+        PaymentQrCode qr = null;
+        if (preview.getQrCodeId() != null) {
+            qr = paymentQrRepository.findByIdWithLock(preview.getQrCodeId()).orElseThrow(QrException::unavailable);
+            qr.requirePayable(OffsetDateTime.now());
+            if (!qr.getAccountId().equals(preview.getDestinationAccount().getId())
+                    || !qr.getCurrency().equals(preview.getCurrency())
+                    || (qr.getType() == QrType.PAYMENT_REQUEST
+                        && (qr.getAmount().compareTo(preview.getAmount()) != 0
+                            || !java.util.Objects.equals(qr.getDescription(), preview.getDescription())))) {
+                throw new IllegalArgumentException("QR preview binding mismatch");
+            }
+        }
         TransactionResponse response = createTransfer(transferRequest, initiator, initiatorEmail);
+        smartOtp.recheckDeadline(initiator.getId(), request.authorizationId());
+        if (qr != null) {
+            // Recheck after waiting for account locks; any expiry rolls the entire transfer back.
+            qr.requirePayable(OffsetDateTime.now());
+            if (qr.getType() == QrType.PAYMENT_REQUEST) {
+                qr.markPaid(response.id(), OffsetDateTime.now());
+                auditLogService.log(qr, AuditEventType.QR_PAID, initiator.getId().toString());
+            }
+        }
         preview.setConsumedAt(OffsetDateTime.now());
         transferPreviewRepository.save(preview);
         return response;
@@ -96,8 +125,12 @@ public class TransferServiceImpl implements TransferService {
     @Override
     @Transactional
     public TransactionResponse transfer(TransferRequest request, String initiatorEmail) {
+        if (request.previewId() != null) {
+            throw new IllegalArgumentException("Preview-bound transfers must use execute");
+        }
         TransferRequest normalizedRequest = normalizeTransferRequest(request);
         User initiator = lockInitiator(initiatorEmail);
+        smartOtp.lockCredential(initiator);
         var existing = idempotencyService.findTransferRecord(normalizedRequest, initiatorEmail);
         if (existing.isPresent()) {
             return responseForIdempotentRetry(existing.get(), normalizedRequest);
@@ -214,6 +247,9 @@ public class TransferServiceImpl implements TransferService {
         Account toAccount = accounts.toAccount();
 
         assertOwnsAccount(fromAccount, initiator);
+        if (request.previewId() == null) {
+            smartOtp.legacy(fromAccount, toAccount);
+        }
         validateAccountActive(fromAccount);
         validateAccountActive(toAccount);
         validateCurrency(fromAccount, toAccount, request.currency());
@@ -367,8 +403,11 @@ public class TransferServiceImpl implements TransferService {
     }
 
     private User lockInitiator(String initiatorEmail) {
-        return userRepository.findByEmailWithLock(initiatorEmail)
+        User initiator = userRepository.findByEmailWithLock(initiatorEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User", initiatorEmail));
+        if (!com.actilazion.aries_transaction.identity.application.AuthenticatedUserPrincipal.from(initiator).isEnabled())
+            throw new AccessDeniedException("User is not active");
+        return initiator;
     }
 
     private void assertOwnsAccount(Account account, User initiator) {

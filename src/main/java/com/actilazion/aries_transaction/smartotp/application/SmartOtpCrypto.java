@@ -34,10 +34,11 @@ public class SmartOtpCrypto {
             byte[] nonce = randomBytes(12);
             Cipher cipher = cipher(Cipher.ENCRYPT_MODE, user, credential, nonce);
             byte[] encrypted = cipher.doFinal(secret);
-            byte[] result = Arrays.copyOf(nonce, nonce.length + encrypted.length);
+            int resultLength = Math.addExact(nonce.length, encrypted.length);
+            byte[] result = Arrays.copyOf(nonce, resultLength);
             System.arraycopy(encrypted, 0, result, nonce.length, encrypted.length);
             return Base64.getEncoder().encodeToString(result);
-        } catch (GeneralSecurityException ex) { throw SmartOtpException.unavailable(); }
+        } catch (GeneralSecurityException | ArithmeticException ex) { throw SmartOtpException.unavailable(); }
     }
     public byte[] decrypt(UUID user, UUID credential, String keyId, String ciphertext) {
         if (!properties.getKeyId().equals(keyId)) throw SmartOtpException.unavailable();
